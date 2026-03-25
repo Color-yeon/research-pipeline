@@ -1,0 +1,31 @@
+# Ralph TUI 설정 - 연구 파이프라인용
+agent = "claude"
+tracker = "json"
+maxIterations = 0          # 무제한 반복
+iterationDelay = 2000      # 반복 간 2초 대기
+autoCommit = false
+outputDir = ".ralph-tui/iterations"
+progressFile = ".ralph-tui/progress.md"
+
+[agentOptions]
+model = "claude-sonnet-4-20250514"
+
+[trackerOptions]
+path = "./prd.json"
+
+[errorHandling]
+strategy = "retry"
+maxRetries = 5
+retryDelayMs = 10000
+
+[rateLimitHandling]
+enabled = true
+maxRetries = 5
+baseBackoffMs = 10000
+
+[notifications]
+enabled = true
+sound = "off"
+
+[parallel]
+mode = "never"
