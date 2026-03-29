@@ -1,8 +1,23 @@
+# Ralph TUI 런타임 데이터
 .ralph-tui/iterations/
+.ralph-tui/progress.md
+.ralph-tui/ralph.lock
+.ralph-tui/reports/
+.ralph-tui/session.json
+.ralph-tui/session-meta.json
+
+# Node
 node_modules/
 
 # Playwright 인증 데이터 (민감 정보)
 .playwright-profile/
 .playwright-auth-temp/
+.playwright-mcp/
 researcher-auth.json
 playwright/.auth/
+
+# 실행 결과물
+archive/
+findings/
+logs/
+test-results/
