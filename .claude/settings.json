@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "chrome-mcp": {
+      "command": "/Users/goomba/.npm/_npx/a04ef7d095ce0ff7/node_modules/.bin/chrome-mcp",
+      "args": [],
+      "env": {}
+    }
+  }
+}

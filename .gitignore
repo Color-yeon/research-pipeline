@@ -1,1 +1,8 @@
 .ralph-tui/iterations/
+node_modules/
+
+# Playwright 인증 데이터 (민감 정보)
+.playwright-profile/
+.playwright-auth-temp/
+researcher-auth.json
+playwright/.auth/
