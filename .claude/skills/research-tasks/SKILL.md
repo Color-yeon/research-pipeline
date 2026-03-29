@@ -1,0 +1,129 @@
+---
+name: research-tasks
+description: "연구 설정(research-config.json)을 기반으로 Ralph TUI용 prd.json 태스크 파일을 자동 생성하는 스킬. deep 모드와 trend 모드에 따라 다른 태스크 시퀀스를 생성한다. '태스크 생성', 'prd 생성', 'generate tasks' 요청 시 사용."
+---
+
+# Ralph TUI 태스크 자동 생성
+
+## 인자
+
+`$ARGUMENTS`: 연구 모드 지정
+- **`deep`**: 심층조사 모드 — 특정 주제에 대한 완전한 문헌조사
+- **`trend`**: 동향탐구 모드 — 리뷰 논문 기반 최신 트렌드 탐색
+
+## 절차
+
+### 1단계: research-config.json 읽기
+
+프로젝트 루트의 `research-config.json`을 읽어 연구 설정을 파악한다.
+
+```json
+{
+  "topic": "연구 주제",
+  "keywords": ["키워드1", "키워드2", ...],
+  "keyword_combinations": [
+    ["키워드1", "키워드2"],
+    ["키워드1", "키워드3"],
+    ...
+  ],
+  "mode": "deep" | "trend",
+  "language": "ko",
+  "max_papers": 100,
+  "notion_parent_page": "노션 부모 페이지 ID (선택)"
+}
+```
+
+### 2단계: 모드별 태스크 시퀀스 생성
+
+#### Deep 모드 (심층조사)
+
+`docs/task-template-deep.md` 참조. 태스크 순서:
+
+1. **Phase 1: 검색 + 초벌 읽기** — 각 키워드 조합별로 다중 소스 검색 및 증거 카드 작성
+2. **Phase 2: 신뢰성 검사** — 수집된 논문의 저널 신뢰도, DOI 검증
+3. **Phase 3: 정독** — Playwright MCP(`browser_run_code`)로 논문 전문 읽기, 증거 카드 보강
+4. **Phase 4: Snowball 추적** — 참고문헌 재귀 추적
+5. **Phase 5: 방법론 분석** — Methods 섹션 비판적 분석
+6. **Phase 6: 통합 분석** — 전체 결과 종합, 연구 갭 식별, 커버리지 감사
+7. **Phase 7: 비교 분석** — 논문 간 결과 비교, 일치/불일치 분석
+8. **Phase 8: 노션 기록** — 결과를 노션 DB로 구조화
+
+#### Trend 모드 (동향탐구)
+
+`docs/task-template-trend.md` 참조. 태스크 순서:
+
+1. **Stage 1: 리뷰 논문 탐색** — 최신 리뷰/메타분석 논문 검색 및 선정
+2. **Stage 2: 참고문헌 전수조사** — 선정된 리뷰 논문의 참고문헌 전체 수집
+3. **Stage 3: 최신 트렌드 분석** — 최근 2~3년 논문 집중 분석, 트렌드 도출
+4. **Stage 4: 감사** — 커버리지 감사, 빠진 논문 검증
+5. **Stage 5: 노션 기록** — 결과를 노션 DB로 구조화
+
+### 3단계: prd.json 생성
+
+Ralph TUI 형식의 `prd.json`을 생성한다.
+
+```json
+{
+  "tasks": [
+    {
+      "id": 1,
+      "title": "태스크 제목",
+      "description": "상세 설명",
+      "status": "pending",
+      "dependencies": [],
+      "priority": "high",
+      "details": "태스크 실행 시 Claude에게 전달될 상세 프롬프트"
+    },
+    ...
+  ]
+}
+```
+
+### 의존성 설정 규칙
+
+#### Deep 모드 의존성
+```
+Phase 1 (키워드별 검색) → 의존성 없음 (병렬 실행 가능)
+Phase 2 (신뢰성 검사) → Phase 1 전체 완료 후
+Phase 3 (정독) → Phase 2 완료 후
+Phase 4 (Snowball) → Phase 3 완료 후
+Phase 5 (방법론 분석) → Phase 3 완료 후 (Phase 4와 병렬 가능)
+Phase 6 (통합 분석) → Phase 4 + Phase 5 완료 후
+Phase 7 (비교 분석) → Phase 6 완료 후
+Phase 8 (노션 기록) → Phase 7 완료 후
+```
+
+#### Trend 모드 의존성
+```
+Stage 1 (리뷰 탐색) → 의존성 없음
+Stage 2 (참고문헌 전수조사) → Stage 1 완료 후
+Stage 3 (최신 트렌드) → Stage 2 완료 후
+Stage 4 (감사) → Stage 3 완료 후
+Stage 5 (노션 기록) → Stage 4 완료 후
+```
+
+### 4단계: 태스크 details 생성
+
+각 태스크의 `details` 필드에는 Claude가 해당 태스크를 실행할 때 필요한 **완전한 프롬프트**를 작성한다:
+- 사용할 스킬 명시 (해당 시)
+- 검색할 키워드 조합 명시
+- 출력 파일 경로 명시
+- CLAUDE.md 규칙 준수 사항 리마인드
+
+### 5단계: 키워드 조합별 태스크 분할
+
+`keyword_combinations`의 각 조합에 대해 별도의 태스크를 생성한다:
+- Phase 1에서 조합별로 태스크를 나눈다.
+- 조합 간 의존성은 없다 (병렬 실행 가능).
+- 각 조합의 태스크 ID를 기록하여 Phase 2 의존성에 사용한다.
+
+## 출력
+
+- `prd.json` — Ralph TUI용 태스크 파일 (프로젝트 루트)
+- `.ralph-tui/progress.md`에 태스크 생성 기록 추가
+
+## 참고 문서
+
+- `docs/task-template-deep.md` — Deep 모드 태스크 시퀀스 상세
+- `docs/task-template-trend.md` — Trend 모드 태스크 시퀀스 상세
+- `CLAUDE.md` — 프로젝트 전체 규칙

@@ -1,0 +1,99 @@
+---
+name: research-snowball
+description: "발견된 논문의 참고문헌을 재귀적으로 추적하는 눈덩이(Snowball) 스킬. 기존 findings의 논문에서 참고문헌을 추출하고, 아직 수집되지 않은 논문을 검색하여 빠짐없이 수집한다. '참고문헌 추적', 'snowball', 'reference tracing' 요청 시 사용."
+---
+
+# 눈덩이(Snowball) 참고문헌 추적
+
+## 인자
+
+`$ARGUMENTS`: findings 파일 경로 (예: `findings/keyword_combination_1.md`)
+
+- 특정 파일 경로가 주어지면 해당 파일의 논문만 대상으로 추적
+- `all`이 주어지면 `findings/` 디렉토리 전체의 모든 논문을 대상으로 추적
+
+## 절차
+
+### 1단계: 기존 논문 목록 수집
+
+1. `$ARGUMENTS`로 지정된 findings 파일을 읽는다.
+2. 파일 내 모든 논문의 **DOI**와 **제목**을 추출하여 `수집_완료_목록`을 만든다.
+3. `findings/` 디렉토리의 다른 파일에서도 DOI 목록을 읽어 중복 제거에 활용한다.
+
+### 2단계: 참고문헌 추출
+
+각 논문에 대해:
+1. **Playwright MCP**를 사용하여 논문 전문에 접근한다.
+   - `browser_navigate` → `https://oca.korea.ac.kr/link.n2s?url=<논문URL>` (토큰 초과 무시)
+   - `browser_run_code` → **References 섹션만 JS로 추출** (아래 코드 사용)
+   - `browser_close` → 브라우저 닫기
+   - **browser_snapshot은 절대 쓰지 마라** (토큰 초과 확정)
+
+   **References 추출 코드** (`browser_run_code`에 전달):
+   ```javascript
+   async (page) => {
+     return await page.evaluate(() => {
+       const sec = [...document.querySelectorAll('.c-article-section__content')].find(s => {
+         const h = s.previousElementSibling;
+         return h && /^reference/i.test(h.innerText.trim());
+       });
+       if (sec) return sec.innerText.trim();
+       const refList = document.querySelector('#references, .references, .ref-list');
+       if (refList) return refList.innerText.trim();
+       return 'REFERENCES_NOT_FOUND';
+     });
+   }
+   ```
+2. References/Bibliography 섹션에서 인용된 논문 목록을 추출한다.
+3. 각 참고문헌의 **제목**, **저자**, **연도**, **DOI(가능한 경우)**를 기록한다.
+
+### 3단계: 미수집 논문 식별
+
+1. 추출한 참고문헌을 `수집_완료_목록`과 대조한다 (DOI 우선, DOI 없으면 제목으로 매칭).
+2. 아직 수집되지 않은 논문을 `미수집_목록`으로 분류한다.
+
+### 4단계: 미수집 논문 검색 및 수집
+
+`미수집_목록`의 각 논문에 대해:
+1. **WebSearch**로 논문 제목 + 저자를 검색하여 DOI와 원문 URL을 확인한다.
+2. **Semantic Scholar**, **OpenAlex** API로 메타데이터를 확인한다.
+3. DOI가 확인되면 **WebFetch**로 DOI 실존을 검증한다.
+4. Playwright MCP(`browser_run_code`)로 논문 전문을 읽고 **증거 카드**를 작성한다.
+5. 증거 카드를 `findings/snowball_depth{N}.md`에 기록한다.
+
+### 5단계: 재귀 반복
+
+1. 4단계에서 새로 수집한 논문의 참고문헌도 2단계부터 반복한다.
+2. 추적 깊이(depth)를 1씩 증가시키며 기록한다.
+3. **종료 조건**: 새로운 미수집 논문이 0개가 될 때까지 반복한다.
+   - 단, docs/snowball-strategy.md의 깊이 제한 규칙을 따른다.
+
+## 중복 제거 규칙
+
+- DOI가 동일한 논문은 무조건 중복으로 판정한다.
+- DOI가 없는 경우, 제목 유사도 90% 이상이면 중복으로 간주한다.
+- 중복 발견 시 `"이미 [파일명]에서 수집됨"` 표기 후 스킵한다.
+- 매 depth마다 수집 완료 목록을 갱신한다.
+
+## 출력
+
+- `findings/snowball_depth1.md` — 1차 추적 결과
+- `findings/snowball_depth2.md` — 2차 추적 결과
+- ... (깊이별로 파일 분리)
+- 각 파일에는 증거 카드 형식으로 논문 정보를 기록한다.
+- 파일 하단에 반드시 `## DOI 목록` 섹션을 포함한다.
+- 파일 상단에 `## 커버리지 보고` 섹션을 포함한다:
+  ```
+  ## 커버리지 보고
+  - 추적 시작 논문 수: N개
+  - 추출한 참고문헌 총 수: M개
+  - 미수집 논문 수: K개
+  - 신규 수집 수: L개
+  - 현재 추적 깊이: depth N
+  - 종료 사유: [미수집 0개 / 깊이 제한 도달]
+  ```
+
+## 참고 문서
+
+- `docs/snowball-strategy.md` — 추적 깊이 제한, 중복 판정, 종료 조건 상세
+- `CLAUDE.md` — 프로젝트 전체 규칙 (검색 전략, 증거 카드 형식, DOI 검증)

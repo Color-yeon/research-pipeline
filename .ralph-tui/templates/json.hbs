@@ -1,0 +1,116 @@
+{{!-- 연구 자동화 파이프라인 — Ralph TUI JSON tracker 프롬프트 템플릿 --}}
+
+{{#if prdContent}}
+# 연구 프로젝트 컨텍스트
+
+{{prdContent}}
+
+---
+{{/if}}
+
+## 현재 태스크: {{taskId}} - {{taskTitle}}
+
+{{#if taskDescription}}
+### 설명
+{{taskDescription}}
+{{/if}}
+
+{{#if acceptanceCriteria}}
+### 완료 조건
+{{acceptanceCriteria}}
+{{/if}}
+
+{{#if notes}}
+### 참고사항
+{{notes}}
+{{/if}}
+
+{{#if dependsOn}}
+**선행 태스크**: {{dependsOn}}
+{{/if}}
+
+{{#if recentProgress}}
+## 이전 진행 상황
+{{recentProgress}}
+{{/if}}
+
+## 작업 지침
+
+### ⚠️ 필수: CLAUDE.md를 반드시 먼저 읽어라
+1. **반드시 `CLAUDE.md`를 Read 도구로 먼저 읽어라.** 여기에 핵심 원칙과 스킬 목록이 있다.
+2. `findings/` 디렉토리의 기존 파일을 읽어 이미 수집된 논문(DOI)을 파악하라
+3. `.ralph-tui/progress.md`를 읽어 전체 진행 상황을 확인하라
+
+### ⚠️ 사용 가능한 스킬
+
+이 파이프라인은 11개 전문 스킬로 구성되어 있다. 태스크에 맞는 스킬을 사용하라:
+
+| 스킬 | 용도 | 태스크 라벨 |
+|------|------|------------|
+| `/research-search` | 다중 소스 논문 검색 | search-read, combo |
+| `/research-read` | Playwright MCP로 논문 전문 읽기 | playwright-read |
+| `/research-credibility` | 신뢰성 검사 + 사기 논문 필터 | credibility |
+| `/research-deep-read` | 6렌즈 병렬 정독 | deep-read |
+| `/research-snowball` | 참고문헌 추적 | snowball |
+| `/research-methods` | 방법론 비판 분석 | methods |
+| `/research-analyze` | 통합 분석 + 감사 | integrate, audit |
+| `/research-compare` | 논문 간 교차 비교 | compare |
+| `/research-notion` | 노션 기록 | notion |
+
+### ⚠️ 논문 전문은 Playwright MCP의 browser_run_code로 읽어라
+
+**WebFetch로 논문을 읽지 마라. WebFetch는 검색용이다.**
+**browser_snapshot도 쓰지 마라 — 토큰 초과가 확정된다.**
+
+논문 전문을 읽을 때는 **항상** 아래 3단계를 따르라:
+
+```
+1단계: browser_navigate
+  url = "https://oca.korea.ac.kr/link.n2s?url=<논문URL>"
+  (토큰 초과 에러는 무시 — 페이지 로딩만 되면 됨)
+
+2단계: browser_run_code
+  JS로 본문 텍스트만 추출 (Methods/References/Extended Data 제외)
+  상세 코드는 /research-read 스킬의 SKILL.md 참조
+
+3단계: browser_close
+  (반드시 브라우저 닫기)
+```
+
+**browser_run_code 결과마저 토큰 초과 시 → 파일로 저장된 경로를 Read로 분할 읽기:**
+```
+Read(file_path="저장된경로", offset=1, limit=500)
+Read(file_path="저장된경로", offset=500, limit=500)
+... 끝까지 반복하여 논문 전체를 읽어라.
+```
+
+**WebFetch가 403 에러를 반환하면 → 무시하고 넘어가지 마라 → 즉시 Playwright 절차를 실행하라.**
+
+### 작업 흐름 (반드시 이 순서를 따라라)
+
+**검색 → 즉시 읽기 → 기록 을 논문 하나마다 반복하라. 검색만 모아서 하고 나중에 읽겠다고 미루지 마라.**
+
+### 검색 전략
+- **다중 소스 검색**: WebSearch로 일반 검색 + OpenAlex, Semantic Scholar, arXiv, Google Scholar
+- **다중 쿼리 변형**: 최소 5개 이상
+- **눈덩이 추적**: 논문의 참고문헌을 추적, 새 논문이 안 나올 때까지 반복
+- **중복 체크**: 이전 findings에서 이미 수집된 논문(DOI 기준)은 스킵
+
+### 결과 기록
+- 발견한 모든 논문에 대해 **증거 카드** 작성 (`.claude/skills/research-search/docs/evidence-card.md` 참조)
+- 결과를 `findings/` 디렉토리에 마크다운으로 저장
+- 파일 하단에 `## DOI 목록` 섹션 필수
+
+### 커버리지 점검
+- 태스크 완료 전 **"더 찾을 수 있는 논문이 남아있는가?"** 자문
+- 커버리지 보고 작성 (사용한 쿼리 수, 검토 논문 수, 선별 수)
+
+### 완료 기록
+- `.ralph-tui/progress.md`에 진행 기록 추가
+- Git 커밋은 하지 마라
+
+## 종료 조건
+태스크 완료 시 다음으로 신호를 보내라:
+<promise>COMPLETE</promise>
+
+**중요**: 작업이 이전 반복에서 이미 완료되었다면, 완료 조건을 확인하고 즉시 종료 신호를 보내라.

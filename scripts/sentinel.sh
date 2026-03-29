@@ -1,0 +1,206 @@
+#!/bin/bash
+# Sentinel 워치독 — Ralph 프로세스 모니터링 및 자동 재시작
+# Rate limit 감지 시 리셋 시간까지 자동 대기 후 재개
+set -euo pipefail
+
+PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+RALPH_BIN="$HOME/.bun/bin/ralph-tui"
+PRD_FILE="$PROJECT_DIR/prd.json"
+LOG_DIR="$PROJECT_DIR/logs"
+SENTINEL_LOG="$LOG_DIR/sentinel.log"
+RALPH_LOG="$LOG_DIR/ralph_run.log"
+
+MAX_RESTARTS=10
+CONSECUTIVE_FAIL_LIMIT=3
+COOLDOWN_SECONDS=360
+CHECK_INTERVAL=60
+FALLBACK_RESET_HOUR=6   # 파싱 실패 시 폴백: 오전 6시
+
+mkdir -p "$LOG_DIR"
+
+restart_count=0
+consecutive_fails=0
+session_id=""
+
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$SENTINEL_LOG"
+}
+
+# === Playwright persistent profile 확인 (논문 전문 접근용) ===
+ensure_playwright_profile() {
+    local profile_dir="$PROJECT_DIR/.playwright-profile"
+    if [ -d "$profile_dir" ]; then
+        log "✓ Playwright persistent profile 존재: $profile_dir"
+    else
+        log "⚠ Playwright persistent profile 없음 — 최초 인증이 필요합니다"
+        log "   실행: bash scripts/setup-auth.sh"
+    fi
+}
+
+# Rate limit 감지: ralph 로그 마지막 100줄에서 rate_limit 확인
+# (Ralph 종료 시 요약 로그가 20줄+ 출력되므로 넉넉하게 100줄)
+check_rate_limit() {
+    if [ -f "$RALPH_LOG" ] && tail -100 "$RALPH_LOG" | grep -q "rate_limit\|hit your limit"; then
+        return 0  # rate limit 감지됨
+    fi
+    return 1  # rate limit 아님
+}
+
+# 미완료 태스크 감지: INTERRUPTED 또는 완료 수 < 전체 수
+check_incomplete() {
+    if [ -f "$RALPH_LOG" ] && tail -30 "$RALPH_LOG" | grep -q "INTERRUPTED\|Skipping.*Max retries"; then
+        return 0  # 미완료 태스크 있음
+    fi
+    return 1
+}
+
+# 로그에서 리셋 시간 파싱 (예: "resets 6am", "resets 2pm", "resets 12:30pm")
+parse_reset_hour_from_log() {
+    local reset_str reset_hour
+    # "resets Xam" 또는 "resets Xpm" 패턴 추출
+    reset_str=$(tail -100 "$RALPH_LOG" 2>/dev/null | grep -o "resets [0-9:]*[ap]m" | tail -1 || echo "")
+
+    if [ -z "$reset_str" ]; then
+        echo "$FALLBACK_RESET_HOUR"
+        return
+    fi
+
+    # 시간 추출 (예: "resets 6am" → 6, "resets 2pm" → 14, "resets 12:30pm" → 12)
+    reset_hour=$(echo "$reset_str" | grep -o '[0-9]*' | head -1)
+
+    if echo "$reset_str" | grep -q "pm" && [ "$reset_hour" -ne 12 ]; then
+        reset_hour=$(( reset_hour + 12 ))
+    elif echo "$reset_str" | grep -q "am" && [ "$reset_hour" -eq 12 ]; then
+        reset_hour=0
+    fi
+
+    echo "$reset_hour"
+}
+
+# 다음 리셋 시간까지 남은 초 계산 (로그에서 리셋 시간을 자동 감지)
+seconds_until_reset() {
+    local reset_hour now_hour now_min now_sec total_now total_reset
+
+    reset_hour=$(parse_reset_hour_from_log)
+    log "   감지된 리셋 시간: 오전/오후 ${reset_hour}시"
+
+    now_hour=$(date '+%H' | sed 's/^0//')
+    now_min=$(date '+%M' | sed 's/^0//')
+    now_sec=$(date '+%S' | sed 's/^0//')
+
+    total_now=$(( now_hour * 3600 + now_min * 60 + now_sec ))
+    total_reset=$(( reset_hour * 3600 ))
+
+    if [ "$total_now" -ge "$total_reset" ]; then
+        # 이미 리셋 시간 지남 → 다음날 리셋까지
+        echo $(( 86400 - total_now + total_reset + 300 ))  # +5분 여유
+    else
+        # 아직 리셋 전
+        echo $(( total_reset - total_now + 300 ))  # +5분 여유
+    fi
+}
+
+# 마지막 세션 ID 가져오기
+get_latest_session_id() {
+    "$RALPH_BIN" resume --list 2>/dev/null | grep -E '^\d+\.' | head -1 | awk '{print $2}' || echo ""
+}
+
+log "=== Sentinel 시작 ==="
+log "프로젝트: $PROJECT_DIR"
+log "최대 재시작: $MAX_RESTARTS"
+log "Rate limit 폴백 리셋 시간: 오전 ${FALLBACK_RESET_HOUR}시"
+
+# Chrome 디버깅 모드 확인/실행 (매 시작 시)
+ensure_playwright_profile
+
+while true; do
+    log "Ralph 실행 시작 (시도 $((restart_count + 1))/$MAX_RESTARTS)"
+
+    cd "$PROJECT_DIR"
+    if [ "$restart_count" -eq 0 ] && [ -z "$session_id" ]; then
+        # 첫 실행
+        "$RALPH_BIN" run --no-tui --prd "$PRD_FILE" 2>&1 | tee -a "$RALPH_LOG"
+        EXIT_CODE=${PIPESTATUS[0]}
+    else
+        # 재시작 — resume
+        if [ -n "$session_id" ]; then
+            "$RALPH_BIN" resume "$session_id" 2>&1 | tee -a "$RALPH_LOG"
+        else
+            "$RALPH_BIN" resume 2>&1 | tee -a "$RALPH_LOG"
+        fi
+        EXIT_CODE=${PIPESTATUS[0]}
+    fi
+
+    # 세션 ID 기록 (다음 resume용)
+    new_session=$(get_latest_session_id)
+    if [ -n "$new_session" ]; then
+        session_id="$new_session"
+    fi
+
+    # 정상 종료 확인
+    if [ "$EXIT_CODE" -eq 0 ]; then
+        # Rate limit 또는 미완료 태스크 확인
+        if check_rate_limit || check_incomplete; then
+            if check_rate_limit; then
+                wait_secs=$(seconds_until_reset)
+                wait_mins=$(( wait_secs / 60 ))
+                reset_time=$(date -v+"${wait_secs}S" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || date -d "+${wait_secs} seconds" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo "약 ${wait_mins}분 후")
+
+                log "⏳ Rate limit 감지! 리셋 시간까지 대기합니다."
+                log "   대기 시간: ${wait_mins}분 (${wait_secs}초)"
+                log "   예상 재개: ${reset_time}"
+
+                sleep "$wait_secs"
+
+                log "⏰ Rate limit 리셋 완료. 재개합니다."
+                ensure_playwright_profile
+            else
+                log "⚠ 미완료 태스크 감지. ${CHECK_INTERVAL}초 후 재개..."
+                sleep "$CHECK_INTERVAL"
+                ensure_playwright_profile
+            fi
+
+            restart_count=$((restart_count + 1))
+            consecutive_fails=0
+            continue
+        fi
+
+        log "✅ Ralph 정상 종료. 모든 태스크 완료."
+        break
+    fi
+
+    restart_count=$((restart_count + 1))
+    consecutive_fails=$((consecutive_fails + 1))
+
+    log "⚠ Ralph 비정상 종료 (exit code $EXIT_CODE)"
+
+    # Rate limit 확인
+    if check_rate_limit; then
+        wait_secs=$(seconds_until_reset)
+        wait_mins=$(( wait_secs / 60 ))
+        log "⏳ Rate limit 감지! ${wait_mins}분 대기 후 재개..."
+        sleep "$wait_secs"
+        log "⏰ Rate limit 리셋 완료. 재개합니다."
+        consecutive_fails=0
+        continue
+    fi
+
+    # 최대 재시작 초과
+    if [ "$restart_count" -ge "$MAX_RESTARTS" ]; then
+        log "❌ 최대 재시작 횟수($MAX_RESTARTS) 초과. Sentinel 종료."
+        break
+    fi
+
+    # 연속 실패 시 쿨다운
+    if [ "$consecutive_fails" -ge "$CONSECUTIVE_FAIL_LIMIT" ]; then
+        log "⚠ 연속 $CONSECUTIVE_FAIL_LIMIT회 실패. ${COOLDOWN_SECONDS}초 쿨다운..."
+        sleep "$COOLDOWN_SECONDS"
+        consecutive_fails=0
+    else
+        log "${CHECK_INTERVAL}초 후 재시작..."
+        sleep "$CHECK_INTERVAL"
+    fi
+done
+
+log "=== Sentinel 종료 ==="
+log "총 재시작 횟수: $restart_count"
