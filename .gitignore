@@ -6,6 +6,9 @@
 .ralph-tui/session.json
 .ralph-tui/session-meta.json
 
+# 환경변수 (민감 정보)
+.env
+
 # Node
 node_modules/
 
@@ -14,6 +17,7 @@ node_modules/
 .playwright-auth-temp/
 .playwright-mcp/
 researcher-auth.json
+.playwright-auth.json
 playwright/.auth/
 
 # 실행 결과물

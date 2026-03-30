@@ -49,7 +49,7 @@
 - 예: 리뷰 3편 선정 → 태스크 3개
 
 ### 각 태스크의 내용
-1. Playwright MCP(`browser_run_code`)로 리뷰 논문 전문에 접근
+1. `node scripts/read-paper.js --refs <DOI>` 스크립트로 리뷰 논문 전문에 접근
 2. References 섹션의 **모든** 참고문헌을 추출
 3. 각 참고문헌에 대해:
    - DOI 확인 (WebSearch 또는 Semantic Scholar)

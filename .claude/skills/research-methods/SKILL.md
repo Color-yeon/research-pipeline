@@ -17,33 +17,14 @@ description: "논문의 실험 방법론을 비판적으로 분석하는 스킬.
 ### 1단계: 논문 전문 접근
 
 1. 대상 논문의 DOI 또는 URL을 확인한다.
-2. **Playwright MCP**로 논문 전문에 접근한다:
-   - `browser_navigate` → `https://oca.korea.ac.kr/link.n2s?url=<논문URL>` (토큰 초과 무시)
-   - `browser_run_code` → **Methods 섹션만 JS로 추출** (아래 코드 사용)
-   - `browser_close` → 브라우저 닫기
-3. **browser_snapshot은 절대 쓰지 마라** (토큰 초과 확정)
+2. **스크립트**로 논문 전문에 접근한다:
+   ```bash
+   node scripts/read-paper.js <DOI>
+   ```
+3. 결과 파일(`findings/raw_texts/{doi-slug}.md`)을 Read 도구로 읽어서 Methods 섹션을 찾는다.
+4. Methods 섹션이 기본 추출에서 제외된 경우, 결과 파일에서 관련 내용을 탐색한다.
 
-**Methods 추출 코드** (`browser_run_code`에 전달):
-```javascript
-async (page) => {
-  return await page.evaluate(() => {
-    // Nature/Springer
-    const sec = [...document.querySelectorAll('.c-article-section__content')].find(s => {
-      const h = s.previousElementSibling;
-      return h && /^method/i.test(h.innerText.trim());
-    });
-    if (sec) return '## Methods\n' + sec.innerText.trim();
-    // Elsevier
-    const elSec = document.querySelector('#sec-methods, .Methods');
-    if (elSec) return '## Methods\n' + elSec.innerText.trim();
-    // 범용 fallback
-    const main = document.querySelector('article, main');
-    if (main) return main.innerText.trim().substring(0, 80000);
-    return 'METHODS_NOT_FOUND';
-  });
-}
-```
-※ Methods는 60K+ 글자로 매우 길 수 있음. 토큰 초과 시 파일 저장 경로를 Read로 분할 읽기.
+**Playwright MCP 직접 호출(browser_navigate, browser_run_code 등)은 금지** — 타임아웃(5s) 및 토큰 초과(10K 한도) 문제 발생.
 
 ### 2단계: 연구 설계 분석
 

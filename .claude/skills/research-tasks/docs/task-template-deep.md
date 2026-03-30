@@ -54,11 +54,11 @@
 ## Phase 3: 정독
 
 ### 목적
-Playwright MCP(`browser_run_code`)를 사용하여 논문 전문을 읽고, 증거 카드를 보강한다.
+`node scripts/read-paper.js` 스크립트를 사용하여 논문 전문을 읽고, 증거 카드를 보강한다.
 
 ### 태스크 내용
 1. 신뢰도 `높음`/`보통` 논문부터 우선 정독
-2. EZproxy 경유하여 Playwright MCP(`browser_run_code`)로 전문 접근
+2. `node scripts/read-paper.js` 스크립트로 EZproxy 경유하여 전문 접근
 3. 초록, 서론, 방법론, 결과, 논의 각 섹션 요약
 4. 증거 카드의 방법론, 핵심 발견, 한계점 필드 보강
 5. 전문 접근 불가 시 `[전문 미확인]` 태그 유지
