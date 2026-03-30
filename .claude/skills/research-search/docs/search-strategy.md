@@ -26,83 +26,88 @@ WebSearch 도구를 사용하여 학술 논문을 검색한다.
 
 ### 2. OpenAlex
 
-OpenAlex API를 WebFetch로 호출한다.
+WebSearch로 OpenAlex 사이트 내 논문을 검색한다.
 
-기본 URL:
-```
-https://api.openalex.org/works?search={쿼리}&per_page=50&sort=relevance_score:desc
-```
-
-필터링 옵션 예시:
-```
-https://api.openalex.org/works?search={쿼리}&filter=publication_year:>2020&per_page=50
-```
-
-DOI로 특정 논문 확인:
-```
-https://api.openalex.org/works/doi:{DOI}
-```
+쿼리 예시:
+- `site:openalex.org "{키워드A}" "{키워드B}"`
+- `OpenAlex "{키워드A} {키워드B}" research paper`
 
 주의:
-- `per_page=50`으로 설정하여 충분한 결과를 확인
-- 결과의 `doi`, `title`, `publication_year`, `cited_by_count` 필드를 추출
-- 페이지네이션이 필요하면 `cursor` 파라미터 사용
+- API 직접 호출(WebFetch) 금지 — deferred tool 스키마 미로드 문제 발생
+- 검색 결과에서 DOI, 제목, 연도, 인용수를 추출
 
 ### 3. Semantic Scholar
 
-Semantic Scholar API를 WebFetch로 호출한다.
+WebSearch로 Semantic Scholar 사이트 내 논문을 검색한다.
 
-기본 검색:
-```
-https://api.semanticscholar.org/graph/v1/paper/search?query={쿼리}&limit=50&fields=title,authors,year,venue,citationCount,externalIds,abstract
-```
+쿼리 예시:
+- `site:semanticscholar.org "{키워드A}" "{키워드B}"`
+- `Semantic Scholar "{키워드A} {키워드B}"`
 
-DOI로 논문 조회:
-```
-https://api.semanticscholar.org/graph/v1/paper/DOI:{DOI}?fields=title,authors,year,venue,citationCount,references,abstract
-```
-
-참고문헌 조회 (Snowball용):
-```
-https://api.semanticscholar.org/graph/v1/paper/DOI:{DOI}/references?fields=title,authors,year,venue,citationCount,externalIds&limit=500
-```
+Snowball 추적 시:
+- Playwright MCP로 Semantic Scholar 논문 페이지에 접근하여 References 섹션 확인
+- `browser_navigate` → `browser_snapshot`으로 참고문헌 목록 추출
 
 주의:
-- `fields` 파라미터로 필요한 필드를 명시
-- API rate limit에 주의 (초당 100 요청)
-- 참고문헌 조회 시 `limit=500`으로 설정
+- API 직접 호출(WebFetch) 금지 — rate limit(429) 및 deferred tool 문제 발생
+- Playwright로 접근 시 봇 감지에 주의
 
 ### 4. arXiv
 
-arXiv API를 WebFetch로 호출한다.
+WebSearch로 arXiv 내 논문을 검색한다.
 
-검색 URL:
-```
-http://export.arxiv.org/api/query?search_query=all:{쿼리}&start=0&max_results=50
-```
-
-카테고리 필터링:
-```
-http://export.arxiv.org/api/query?search_query=all:{쿼리}+AND+cat:{카테고리}&max_results=50
-```
+쿼리 예시:
+- `site:arxiv.org "{키워드A}" "{키워드B}"`
+- `arXiv "{키워드A} {키워드B}"`
 
 주의:
-- XML 응답이므로 제목, 저자, 초록, DOI 필드를 파싱
-- `max_results=50`으로 충분한 결과 확인
+- API 직접 호출(WebFetch) 금지 — deferred tool 스키마 미로드 문제 발생
 - arXiv ID는 있지만 DOI가 없는 논문도 많음 -- arXiv ID를 기록
 
 ### 5. Google Scholar
 
-WebSearch 도구를 사용하여 Google Scholar를 검색한다.
+WebSearch 도구로 초기 검색 후, Playwright MCP로 상세 접근한다.
 
 쿼리 예시:
 - `site:scholar.google.com "키워드A" "키워드B"`
-- Google Scholar 검색 결과 페이지 URL을 WebFetch로 접근
+
+상세 접근 (Playwright MCP):
+1. `browser_navigate`로 Google Scholar 검색 결과 URL 접근
+2. `browser_snapshot`으로 결과 목록 확인
+3. 개별 논문 페이지는 EZproxy 경유: `https://oca.korea.ac.kr/link.n2s?url=<논문URL>`
 
 주의:
-- Google Scholar는 직접 API가 없으므로 웹 검색을 활용
+- Google Scholar는 봇 감지가 강하므로 WebFetch 대신 Playwright 사용
 - 인용수 정보가 함께 제공되므로 활용
 - 같은 논문이 다른 소스에서도 발견될 수 있으므로 DOI로 중복 체크
+
+---
+
+## Playwright MCP 사용 (웹 페이지 접근)
+
+출판사 페이지, Google Scholar 등 웹 페이지에 접근해야 할 때 Playwright MCP를 사용한다.
+
+### 접근 절차
+
+1. **browser_navigate**로 EZproxy URL 접근
+   ```
+   https://oca.korea.ac.kr/link.n2s?url=<원본URL>
+   ```
+2. **browser_snapshot**으로 페이지 내용 확인 (메타데이터, 초록 추출)
+3. 필요 시 **browser_run_code**로 텍스트 추출
+
+### 적용 범위
+
+- 출판사 페이지 접근 (PMC, ScienceDirect, Springer, Wiley, Taylor & Francis 등)
+- DOI 검증 실패 시 (`https://doi.org/<DOI>`)
+- Google Scholar 결과 페이지 접근
+- Semantic Scholar 논문 상세 페이지 (Snowball 추적 시)
+
+### 주의사항
+
+- **WebFetch 사용 금지** — deferred tool 스키마 미로드 및 rate limit(429) 문제 발생
+- 모든 논문 검색은 WebSearch로, 웹 페이지 접근은 Playwright MCP로 수행
+- Playwright 사용 후 반드시 `browser_close`로 브라우저 정리
 
 ---
 
