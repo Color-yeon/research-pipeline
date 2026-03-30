@@ -62,13 +62,21 @@ description: "다중 소스 논문 검색 스킬. WebSearch, OpenAlex, Semantic 
 
 소스별 구체적인 검색 방법은 `<skill-dir>/docs/search-strategy.md` 참조.
 
+**도구 선택 규칙:**
+- 모든 논문 검색 → **WebSearch** (API 직접 호출 금지, WebFetch 사용 금지)
+  - OpenAlex, Semantic Scholar, arXiv 등 학술 DB는 WebSearch 쿼리로 간접 검색
+  - 예: `Semantic Scholar "4D-QSAR"`, `OpenAlex "keyword" research`, `arXiv "keyword"`
+- 웹 페이지 (Google Scholar, 출판사 페이지, PMC 등) → **Playwright MCP**
+- DOI 검증 → **WebSearch**로 `doi.org/<DOI>` 검색하여 실존 확인
+
 ### 4단계: DOI 검증 (할루시네이션 방지)
 
 발견한 모든 논문에 대해:
-1. DOI가 있으면 `https://doi.org/<DOI>` 에 WebFetch로 접근하여 실존 확인
-2. DOI가 확인되면 그대로 기록
-3. DOI를 찾을 수 없으면 `DOI: 미확인` 기록
-4. WebFetch로 확인 불가하면 `[DOI 미검증]` 태그 부착
+1. DOI가 있으면 WebSearch로 `doi.org/<DOI>` 검색하여 실존 확인
+2. WebSearch로 확인 실패 시 Playwright MCP로 `https://doi.org/<DOI>` 접근하여 재시도
+3. DOI가 확인되면 그대로 기록
+4. DOI를 찾을 수 없으면 `DOI: 미확인` 기록
+5. 두 방법 모두 실패하면 `[DOI 미검증]` 태그 부착
 
 **절대 규칙: 검색으로 찾지 못한 논문을 기억에 의존해서 언급하지 마라.**
 
@@ -130,22 +138,6 @@ Snowball 추적의 상세 절차는 `<skill-dir>/docs/search-strategy.md` 참조
 ## DOI 목록
 저자 (연도). 제목. 저널. DOI: https://doi.org/...
 ```
-
-### 차단된 논문 목록
-전문 접근이 차단된(paywall 등) 논문은 별도로 `findings/{키워드조합}_blocked.json` 에 저장한다.
-
-```json
-[
-  {
-    "title": "논문 제목",
-    "doi": "https://doi.org/...",
-    "url": "원본 URL",
-    "reason": "paywall / 403 / 기타 사유"
-  }
-]
-```
-
-이 파일은 이후 `research-read` 스킬에서 대학 프록시로 전문 접근할 때 사용된다.
 
 ## 참고 문서
 
