@@ -41,7 +41,7 @@ description: "연구 설정(research-config.json)을 기반으로 Ralph TUI용 p
 
 1. **Phase 1: 검색 + 초벌 읽기** — 각 키워드 조합별로 다중 소스 검색 및 증거 카드 작성
 2. **Phase 2: 신뢰성 검사** — 수집된 논문의 저널 신뢰도, DOI 검증
-3. **Phase 3: 정독** — Playwright MCP(`browser_run_code`)로 논문 전문 읽기, 증거 카드 보강
+3. **Phase 3: 정독** — `node scripts/read-paper.js` 스크립트로 논문 전문 읽기, 증거 카드 보강
 4. **Phase 4: Snowball 추적** — 참고문헌 재귀 추적
 5. **Phase 5: 방법론 분석** — Methods 섹션 비판적 분석
 6. **Phase 6: 통합 분석** — 전체 결과 종합, 연구 갭 식별, 커버리지 감사

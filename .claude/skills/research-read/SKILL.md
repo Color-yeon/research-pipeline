@@ -66,23 +66,13 @@ done
    - `[전문 미확인]` 태그 제거
 4. 스크립트 실행 실패한 논문(접근 실패 파일)은 `[전문 미확인]` 태그 유지
 
-### 방법 2: Playwright MCP (fallback — 스크립트 실패 시)
+### 스크립트 실패 시 처리
 
-스크립트가 실패하는 특수한 경우(로그인 필요 페이지, 특이한 출판사 등)에만 사용한다.
-
-```
-1단계: browser_navigate
-  url = "https://oca.korea.ac.kr/link.n2s?url=<논문URL>"
-  ※ 결과가 토큰 초과로 파일에 저장되어도 무시 (페이지 로딩만 되면 됨)
-
-2단계: browser_run_code로 본문 추출
-  (JS 추출 코드는 docs/extraction-js.md 참조)
-
-3단계: browser_close
-  (반드시 브라우저 닫기)
-```
-
-**주의**: 이 방법은 논문당 ~300K 토큰을 소모하므로, 스크립트가 작동할 때는 사용하지 않는다.
+스크립트가 실패하면 (로그인 만료, 출판사 차단 등):
+1. 에러 메시지를 확인하고 원인을 파악한다
+2. 로그인 만료 시: `node scripts/setup-auth.js` 재실행 후 재시도
+3. 출판사 차단 시: 초록만 수집 + `[전문 미확인]` 태그 부착
+4. **Playwright MCP 직접 호출(browser_navigate, browser_run_code 등)은 사용하지 않는다** — 타임아웃(5s) 및 토큰 초과(10K 한도) 문제 발생
 
 ## EZproxy 인증
 

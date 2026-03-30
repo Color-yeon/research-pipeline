@@ -6,7 +6,11 @@
         "@playwright/mcp@latest",
         "--headless",
         "--user-data-dir", ".playwright-profile"
-      ]
+      ],
+      "env": {
+        "PLAYWRIGHT_MCP_TIMEOUT_ACTION": "30000",
+        "PLAYWRIGHT_MCP_TIMEOUT_NAVIGATION": "90000"
+      }
     }
   }
 }

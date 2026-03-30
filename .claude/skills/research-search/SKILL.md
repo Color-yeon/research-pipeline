@@ -66,17 +66,16 @@ description: "다중 소스 논문 검색 스킬. WebSearch, OpenAlex, Semantic 
 - 모든 논문 검색 → **WebSearch** (API 직접 호출 금지, WebFetch 사용 금지)
   - OpenAlex, Semantic Scholar, arXiv 등 학술 DB는 WebSearch 쿼리로 간접 검색
   - 예: `Semantic Scholar "4D-QSAR"`, `OpenAlex "keyword" research`, `arXiv "keyword"`
-- 웹 페이지 (Google Scholar, 출판사 페이지, PMC 등) → **Playwright MCP**
 - DOI 검증 → **WebSearch**로 `doi.org/<DOI>` 검색하여 실존 확인
+- 논문 본문 접근 → **`node scripts/read-paper.js`** 스크립트 사용 (Playwright MCP 직접 호출 금지)
 
 ### 4단계: DOI 검증 (할루시네이션 방지)
 
 발견한 모든 논문에 대해:
 1. DOI가 있으면 WebSearch로 `doi.org/<DOI>` 검색하여 실존 확인
-2. WebSearch로 확인 실패 시 Playwright MCP로 `https://doi.org/<DOI>` 접근하여 재시도
-3. DOI가 확인되면 그대로 기록
-4. DOI를 찾을 수 없으면 `DOI: 미확인` 기록
-5. 두 방법 모두 실패하면 `[DOI 미검증]` 태그 부착
+2. DOI가 확인되면 그대로 기록
+3. DOI를 찾을 수 없으면 `DOI: 미확인` 기록
+4. 검색 실패 시 `[DOI 미검증]` 태그 부착
 
 **절대 규칙: 검색으로 찾지 못한 논문을 기억에 의존해서 언급하지 마라.**
 

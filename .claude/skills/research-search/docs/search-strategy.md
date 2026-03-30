@@ -45,12 +45,12 @@ WebSearch로 Semantic Scholar 사이트 내 논문을 검색한다.
 - `Semantic Scholar "{키워드A} {키워드B}"`
 
 Snowball 추적 시:
-- Playwright MCP로 Semantic Scholar 논문 페이지에 접근하여 References 섹션 확인
-- `browser_navigate` → `browser_snapshot`으로 참고문헌 목록 추출
+- `node scripts/read-paper.js --refs <DOI>` 스크립트로 참고문헌 추출
+- 스크립트 결과 파일(`findings/raw_texts/`)을 Read 도구로 읽어서 References 확인
 
 주의:
 - API 직접 호출(WebFetch) 금지 — rate limit(429) 및 deferred tool 문제 발생
-- Playwright로 접근 시 봇 감지에 주의
+- Playwright MCP 직접 호출 금지 — 토큰 초과 및 타임아웃 문제 발생
 
 ### 4. arXiv
 
@@ -66,48 +66,54 @@ WebSearch로 arXiv 내 논문을 검색한다.
 
 ### 5. Google Scholar
 
-WebSearch 도구로 초기 검색 후, Playwright MCP로 상세 접근한다.
+WebSearch 도구로 검색한다.
 
 쿼리 예시:
 - `site:scholar.google.com "키워드A" "키워드B"`
-
-상세 접근 (Playwright MCP):
-1. `browser_navigate`로 Google Scholar 검색 결과 URL 접근
-2. `browser_snapshot`으로 결과 목록 확인
-3. 개별 논문 페이지는 EZproxy 경유: `https://oca.korea.ac.kr/link.n2s?url=<논문URL>`
+- `Google Scholar "키워드A" "키워드B" research`
 
 주의:
-- Google Scholar는 봇 감지가 강하므로 WebFetch 대신 Playwright 사용
+- Google Scholar는 봇 감지가 강하므로 WebSearch로만 접근
 - 인용수 정보가 함께 제공되므로 활용
 - 같은 논문이 다른 소스에서도 발견될 수 있으므로 DOI로 중복 체크
+- 논문 본문이 필요하면 `node scripts/read-paper.js <DOI>` 스크립트 사용
 
 ---
 
-## Playwright MCP 사용 (웹 페이지 접근)
+## 논문 본문 접근 (스크립트 기반)
 
-출판사 페이지, Google Scholar 등 웹 페이지에 접근해야 할 때 Playwright MCP를 사용한다.
+논문 본문이 필요할 때는 반드시 `scripts/read-paper.js` 스크립트를 사용한다.
+**Playwright MCP 직접 호출(browser_navigate, browser_snapshot, browser_run_code 등)은 금지한다.**
 
-### 접근 절차
+### 왜 스크립트를 사용하는가
 
-1. **browser_navigate**로 EZproxy URL 접근
-   ```
-   https://oca.korea.ac.kr/link.n2s?url=<원본URL>
-   ```
-2. **browser_snapshot**으로 페이지 내용 확인 (메타데이터, 초록 추출)
-3. 필요 시 **browser_run_code**로 텍스트 추출
+| | 스크립트 (`read-paper.js`) | Playwright MCP 직접 호출 |
+|---|---|---|
+| 결과 저장 | `findings/raw_texts/`에 파일 저장 | MCP 도구 결과로 반환 |
+| 토큰 제한 | **없음** (Read로 분할 읽기) | **10,000 토큰** (MCP 프로토콜 한도) |
+| 타임아웃 | 45초 (충분) | 5초 (EZproxy에서 초과) |
+| 추출 방식 | JS로 본문만 추출 + 80KB 제한 | 전체 HTML 반환 (350K+ 문자) |
 
-### 적용 범위
+### 사용법
 
-- 출판사 페이지 접근 (PMC, ScienceDirect, Springer, Wiley, Taylor & Francis 등)
-- DOI 검증 실패 시 (`https://doi.org/<DOI>`)
-- Google Scholar 결과 페이지 접근
-- Semantic Scholar 논문 상세 페이지 (Snowball 추적 시)
+```bash
+# 단일 논문
+node scripts/read-paper.js <DOI>
+
+# 참고문헌 포함 (Snowball용)
+node scripts/read-paper.js --refs <DOI>
+
+# 배치 처리
+node scripts/read-paper.js --batch findings/<키워드>_blocked.json
+```
+
+결과 파일(`findings/raw_texts/`)을 Read 도구로 읽어서 증거 카드를 보강한다.
 
 ### 주의사항
 
+- **Playwright MCP 직접 호출 금지** — 타임아웃(5s) 및 토큰 초과(10K 한도) 문제 발생
 - **WebFetch 사용 금지** — deferred tool 스키마 미로드 및 rate limit(429) 문제 발생
-- 모든 논문 검색은 WebSearch로, 웹 페이지 접근은 Playwright MCP로 수행
-- Playwright 사용 후 반드시 `browser_close`로 브라우저 정리
+- 모든 논문 검색은 WebSearch로, 논문 본문 접근은 스크립트로 수행
 
 ---
 

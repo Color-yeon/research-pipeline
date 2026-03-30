@@ -3,7 +3,21 @@
 ## 개요
 
 고려대학교 EZproxy를 경유하여 논문 전문에 접근하는 절차를 정리한다.
-Playwright MCP의 `browser_run_code`를 사용하여 본문 텍스트만 추출한다.
+**반드시 `scripts/read-paper.js` 스크립트를 사용한다.**
+Playwright MCP 직접 호출(browser_navigate, browser_run_code, browser_snapshot 등)은 **금지**한다.
+
+### 왜 Playwright MCP 직접 호출을 금지하는가
+
+| 문제 | 원인 |
+|------|------|
+| **타임아웃** | Playwright MCP의 action 타임아웃이 5초로 하드코딩 — EZproxy 페이지가 5초 내에 렌더링 불가 |
+| **토큰 초과** | MCP 도구 결과의 10,000 토큰 한도 — 논문 HTML이 44,000+ 토큰으로 항상 초과 |
+| **토큰 낭비** | browser_navigate가 전체 HTML(350K+ 문자)을 반환 — 불필요한 토큰 소비 |
+
+스크립트는 이 문제를 모두 회피한다:
+- 타임아웃: 45초 (충분)
+- 토큰 제한: 없음 (파일 시스템에 저장 → Read로 분할 읽기)
+- 추출 방식: JS로 본문만 추출 + 80KB 제한
 
 ---
 
@@ -34,163 +48,74 @@ https://oca.korea.ac.kr/link.n2s?url=<원본 논문 URL>
 
 ---
 
-## Playwright MCP 도구 사용법
+## 스크립트 사용법
 
-### 사용할 도구
+### 단일 논문 읽기
 
-| 도구 | 용도 | 비고 |
-|------|------|------|
-| `browser_navigate` | 프록시 URL로 페이지 로딩 | 결과 토큰 초과는 무시 (페이지 로딩만 되면 됨) |
-| `browser_run_code` | **JS로 본문 텍스트만 추출** | 핵심 도구. 토큰 초과 방지 |
-| `browser_close` | 브라우저 닫기 | 논문 읽기 완료 후 반드시 실행 |
-| `browser_evaluate` | 특정 섹션 개별 추출 | Methods만 별도 추출 등 |
+```bash
+node scripts/read-paper.js <DOI>
+```
 
-### 절대 사용 금지
+결과: `findings/raw_texts/{doi-slug}.md`
 
-| 도구 | 금지 사유 |
-|------|----------|
-| `browser_snapshot` | 전체 UI 포함, 항상 토큰 초과. **절대 쓰지 마라.** |
-| WebFetch | 논문 본문은 WebFetch로 읽을 수 없다. 검색/DOI 확인 전용. |
+### 참고문헌 포함 (Snowball용)
+
+```bash
+node scripts/read-paper.js --refs <DOI>
+```
+
+본문과 함께 References 섹션도 추출한다.
+
+### 배치 처리 (_blocked.json)
+
+```bash
+node scripts/read-paper.js --batch findings/<키워드>_blocked.json
+```
+
+### 전체 _blocked.json 일괄 처리
+
+```bash
+for f in findings/*_blocked.json; do
+  node scripts/read-paper.js --batch "$f"
+done
+```
 
 ---
 
-## 기본 접근 절차 (3단계)
+## 스크립트 실행 후 처리
 
-### 1단계: 프록시 URL로 이동
-
-```
-browser_navigate(url="https://oca.korea.ac.kr/link.n2s?url=<논문URL>")
-```
-
-결과가 토큰 초과로 파일에 저장되어도 **무시하라**. 페이지가 로딩되기만 하면 된다.
-
-### 2단계: browser_run_code로 본문 추출
-
-```javascript
-async (page) => {
-  return await page.evaluate(() => {
-    const parts = [];
-    // 제목
-    const title = document.querySelector('h1.c-article-title, h1[data-test="article-title"], article h1, .article-title, .highwire-cite-title, #page-title');
-    if (title) parts.push('# ' + title.innerText.trim());
-    // 저자
-    const authors = document.querySelector('.c-article-author-list, [data-test="author-list"], .author-list, .highwire-cite-authors');
-    if (authors) parts.push('**Authors:** ' + authors.innerText.trim().substring(0, 500));
-    // 핵심 섹션만 (불필요 섹션 제외)
-    const skip = /method|reference|acknowledg|author info|ethics|data avail|code avail|competing|peer review|additional info|extended data|supplementary|source data|rights|about this/i;
-    // Nature/Springer 스타일
-    document.querySelectorAll('.c-article-section__content').forEach(sec => {
-      const h = sec.previousElementSibling;
-      const headingText = h ? h.innerText.trim() : '';
-      if (skip.test(headingText)) return;
-      const text = sec.innerText.trim();
-      if (text.length > 30) parts.push('## ' + headingText + '\n' + text);
-    });
-    // Frontiers 스타일 (h2 기반 섹션)
-    if (parts.length <= 2) {
-      document.querySelectorAll('h2').forEach(h2 => {
-        const ht = h2.innerText.trim();
-        if (skip.test(ht)) return;
-        if (/ORIGINAL RESEARCH|Summary|cookie|privacy|trust in science|statement|author contribution|funding|conflict/i.test(ht)) return;
-        let text = '';
-        let sib = h2.nextElementSibling;
-        while (sib && sib.tagName !== 'H2') {
-          if (sib.innerText) text += sib.innerText.trim() + '\n';
-          sib = sib.nextElementSibling;
-        }
-        if (text.length > 30) parts.push('## ' + ht + '\n' + text.trim());
-      });
-    }
-    // Elsevier/ScienceDirect 스타일
-    if (parts.length <= 2) {
-      document.querySelectorAll('.section-paragraph, .Body .section').forEach(sec => {
-        const text = sec.innerText.trim();
-        if (text.length > 50 && !skip.test(text.substring(0, 100))) parts.push(text);
-      });
-    }
-    // 범용 fallback
-    if (parts.length <= 2) {
-      const main = document.querySelector('article, main, [role="main"]');
-      if (main) parts.push(main.innerText.trim().substring(0, 80000));
-    }
-    return parts.join('\n\n');
-  });
-}
-```
-
-**왜 이 방법을 쓰는가:**
-- `browser_navigate`/`browser_snapshot`: 전체 UI(네비, 사이드바, 푸터, 광고) 포함 → 350K+ 글자 → 토큰 초과
-- `browser_evaluate`: 본문만 추출해도 126K+ 글자 → 토큰 초과
-- `browser_run_code`: 핵심 섹션만 추출 → 토큰 한도 내로 들어옴
-
-### 3단계: 브라우저 닫기
-
-```
-browser_close()
-```
+1. `findings/raw_texts/` 디렉토리의 결과 파일 목록 확인
+2. 각 파일을 Read 도구로 읽기 (필요시 offset/limit으로 분할)
+3. 읽은 내용을 기반으로 해당 findings 파일의 증거 카드 보강:
+   - 방법론, 핵심 발견, 한계점 필드 업데이트
+   - `[전문 미확인]` 태그 제거
+4. 스크립트 실행 실패한 논문은 `[전문 미확인]` 태그 유지
 
 ---
 
 ## Methods 별도 추출 (research-methods 스킬용)
 
-Methods는 기본 추출에서 제외된다. 필요하면 별도로 추출:
+스크립트의 기본 추출에서 Methods는 제외된다. Methods가 필요하면:
 
-```javascript
-async (page) => {
-  return await page.evaluate(() => {
-    // Nature/Springer
-    const sec = [...document.querySelectorAll('.c-article-section__content')].find(s => {
-      const h = s.previousElementSibling;
-      return h && /^method/i.test(h.innerText.trim());
-    });
-    if (sec) return '## Methods\n' + sec.innerText.trim();
-    // Elsevier
-    const elSec = document.querySelector('#sec-methods, .Methods');
-    if (elSec) return '## Methods\n' + elSec.innerText.trim();
-    return 'METHODS_NOT_FOUND';
-  });
-}
+```bash
+# 스크립트로 전체 본문을 추출한 후
+node scripts/read-paper.js <DOI>
+
+# 결과 파일에서 Methods 섹션을 Read로 읽기
+# findings/raw_texts/{doi-slug}.md 에서 "## Methods" 이후 부분 확인
 ```
 
-※ Methods는 보통 60K+ 글자로 매우 길다. 토큰 초과 시 파일에 저장된 경로를 Read로 분할 읽기.
+※ 스크립트의 skip 패턴에서 Methods를 포함하려면 `--include-methods` 옵션 추가 (향후 구현)
 
 ---
 
 ## References 별도 추출 (research-snowball 스킬용)
 
-참고문헌도 기본 추출에서 제외된다. Snowball 추적 시 별도 추출:
-
-```javascript
-async (page) => {
-  return await page.evaluate(() => {
-    const sec = [...document.querySelectorAll('.c-article-section__content')].find(s => {
-      const h = s.previousElementSibling;
-      return h && /^reference/i.test(h.innerText.trim());
-    });
-    if (sec) return sec.innerText.trim();
-    const refList = document.querySelector('#references, .references, .ref-list');
-    if (refList) return refList.innerText.trim();
-    return 'REFERENCES_NOT_FOUND';
-  });
-}
+```bash
+node scripts/read-paper.js --refs <DOI>
 ```
 
----
-
-## 토큰 초과 fallback (극단적으로 긴 논문)
-
-`browser_run_code` 결과마저 초과하는 경우 (매우 드묾):
-
-1. 결과가 파일로 저장된 경로를 확인한다
-2. Read 도구로 분할하여 읽는다:
-
-```
-Read(file_path="저장된경로", offset=1, limit=500)
-Read(file_path="저장된경로", offset=500, limit=500)
-... 끝까지 반복
-```
-
-3. **논문 전체를 반드시 읽어야 한다** — 일부만 읽고 멈추지 마라
+결과 파일의 하단에 References 섹션이 포함된다.
 
 ---
 
@@ -200,7 +125,7 @@ Read(file_path="저장된경로", offset=500, limit=500)
 
 | 실패 유형 | 대응 |
 |----------|------|
-| EZproxy 로그인 만료 | 사용자에게 `bash scripts/setup-auth.sh` 재실행 요청 |
+| EZproxy 로그인 만료 | `node scripts/setup-auth.js` 재실행 후 재시도 |
 | 프록시 경유해도 접근 불가 | 초록만 수집 + `[전문 미확인]` 태그 |
 | 페이지 로딩 실패 | 1회 재시도 후 실패 시 `[전문 미확인]` 태그 |
 | 논문 삭제/이동 | DOI로 다른 URL 검색 시도 후 실패 시 `[전문 미확인]` 태그 |

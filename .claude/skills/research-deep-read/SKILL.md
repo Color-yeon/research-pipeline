@@ -32,71 +32,23 @@ DOI가 주어지면 논문 전문을 먼저 확보한 후 분석을 시작한다
 ### 1단계: 논문 전문 확보
 
 - **DOI가 주어진 경우**:
-  1. DOI로 논문 URL 확인 (WebSearch 또는 WebFetch로 `https://doi.org/{DOI}` 확인)
-  2. EZproxy를 경유하여 Playwright MCP로 논문 전문 확보
+  1. 스크립트로 논문 전문 확보:
+     ```bash
+     node scripts/read-paper.js <DOI>
      ```
-     browser_navigate → "https://oca.korea.ac.kr/link.n2s?url={논문URL}"
-       (토큰 초과 무시, 페이지 로딩만 되면 됨)
-     browser_run_code → JS로 본문 텍스트만 추출 (SKILL.md의 추출 코드 참조)
-       ※ browser_snapshot은 절대 쓰지 마라 (토큰 초과 확정)
-     browser_close → 브라우저 닫기
-     ```
-  3. 추출된 텍스트를 임시 파일로 저장
+  2. 결과 파일(`findings/raw_texts/{doi-slug}.md`)을 Read 도구로 읽기
+  3. 논문 텍스트가 길면 offset/limit으로 분할 읽기
 
 - **파일 경로가 주어진 경우**:
   1. Read 도구로 파일 내용 읽기
   2. 논문 텍스트가 너무 길면 섹션별로 나눠서 읽기
 
 - **기존 findings에서 확인**:
-  1. `findings/` 디렉토리에 해당 논문 정보가 있는지 확인
-  2. 이미 수집된 데이터가 있으면 활용
+  1. `findings/raw_texts/` 디렉토리에 해당 논문이 이미 추출되어 있는지 확인
+  2. `findings/` 디렉토리에 해당 논문 정보가 있는지 확인
+  3. 이미 수집된 데이터가 있으면 활용
 
-**본문 추출 JS 코드** (`browser_run_code`에 전달):
-```javascript
-async (page) => {
-  return await page.evaluate(() => {
-    const parts = [];
-    const title = document.querySelector('h1.c-article-title, h1[data-test="article-title"], article h1, .article-title, .highwire-cite-title, #page-title');
-    if (title) parts.push('# ' + title.innerText.trim());
-    const authors = document.querySelector('.c-article-author-list, [data-test="author-list"], .author-list, .highwire-cite-authors');
-    if (authors) parts.push('**Authors:** ' + authors.innerText.trim().substring(0, 500));
-    const skip = /method|reference|acknowledg|author info|ethics|data avail|code avail|competing|peer review|additional info|extended data|supplementary|source data|rights|about this/i;
-    document.querySelectorAll('.c-article-section__content').forEach(sec => {
-      const h = sec.previousElementSibling;
-      const headingText = h ? h.innerText.trim() : '';
-      if (skip.test(headingText)) return;
-      const text = sec.innerText.trim();
-      if (text.length > 30) parts.push('## ' + headingText + '\n' + text);
-    });
-    // Frontiers 스타일 (h2 기반 섹션)
-    if (parts.length <= 2) {
-      document.querySelectorAll('h2').forEach(h2 => {
-        const ht = h2.innerText.trim();
-        if (skip.test(ht)) return;
-        if (/ORIGINAL RESEARCH|Summary|cookie|privacy|trust in science|statement|author contribution|funding|conflict/i.test(ht)) return;
-        let text = '';
-        let sib = h2.nextElementSibling;
-        while (sib && sib.tagName !== 'H2') {
-          if (sib.innerText) text += sib.innerText.trim() + '\n';
-          sib = sib.nextElementSibling;
-        }
-        if (text.length > 30) parts.push('## ' + ht + '\n' + text.trim());
-      });
-    }
-    if (parts.length <= 2) {
-      document.querySelectorAll('.section-paragraph, .Body .section').forEach(sec => {
-        const text = sec.innerText.trim();
-        if (text.length > 50 && !skip.test(text.substring(0, 100))) parts.push(text);
-      });
-    }
-    if (parts.length <= 2) {
-      const main = document.querySelector('article, main, [role="main"]');
-      if (main) parts.push(main.innerText.trim().substring(0, 80000));
-    }
-    return parts.join('\n\n');
-  });
-}
-```
+**Playwright MCP 직접 호출(browser_navigate, browser_run_code 등)은 금지** — 타임아웃(5s) 및 토큰 초과(10K 한도) 문제 발생.
 
 ### 2단계: 논문 텍스트 준비
 
