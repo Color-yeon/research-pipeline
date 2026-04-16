@@ -47,16 +47,33 @@ echo " 모드: $MODE"
 echo " 시작: $(date '+%Y-%m-%d %H:%M:%S')"
 echo "=========================================="
 
+# === EZproxy/도서관 프록시 초기 설정 ===
+# .env가 비어있으면 대화형으로 PROXY_BASE_URL/PROXY_LOGIN_URL 등을 입력받는다.
+# 이미 설정되어 있으면 아무 일도 하지 않고 즉시 반환한다.
+echo ""
+echo "────────────────────────────────────────"
+echo " EZproxy 설정 확인"
+echo "────────────────────────────────────────"
+bash "$SCRIPTS_DIR/setup-proxy.sh"
+
 # === Playwright 인증 확인 ===
 echo ""
 echo "────────────────────────────────────────"
 echo " Playwright 인증 확인"
 echo "────────────────────────────────────────"
 
+PROXY_ENABLED_VAL=""
+if [ -f "$PROJECT_DIR/.env" ]; then
+    PROXY_ENABLED_VAL="$(grep -E '^PROXY_ENABLED=' "$PROJECT_DIR/.env" 2>/dev/null | head -n 1 | cut -d'=' -f2- || true)"
+fi
+
+PLAYWRIGHT_AUTH_JSON="$PROJECT_DIR/.playwright-auth.json"
 PLAYWRIGHT_PROFILE="$PROJECT_DIR/.playwright-profile"
 
-if [ -d "$PLAYWRIGHT_PROFILE" ]; then
-    echo "✓ Playwright persistent profile 존재"
+if [ "$PROXY_ENABLED_VAL" = "false" ]; then
+    echo "✓ PROXY_ENABLED=false — EZproxy 인증 스킵 (오픈액세스 논문만 시도)"
+elif [ -f "$PLAYWRIGHT_AUTH_JSON" ] || [ -d "$PLAYWRIGHT_PROFILE" ]; then
+    echo "✓ Playwright 인증 상태 존재"
 else
     echo "⚠ Playwright 인증이 필요합니다."
     echo "  최초 1회 EZproxy 로그인이 필요합니다."

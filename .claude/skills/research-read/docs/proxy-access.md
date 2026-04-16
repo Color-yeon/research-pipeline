@@ -76,9 +76,21 @@ GET https://api.core.ac.uk/v3/search/works/?q=doi:"{doi}"
 
 ### EZproxy URL 형식
 
+프록시 URL은 사용자가 속한 학교/기관에 따라 다르다.
+스크립트는 `.env`의 `PROXY_BASE_URL`을 읽어 원본 논문 URL을 뒤에 붙이는 방식으로 동작한다.
+
 ```
-https://oca.korea.ac.kr/link.n2s?url=<원본 논문 URL>
+<PROXY_BASE_URL><원본 논문 URL>
 ```
+
+형식 예시(허구, 참고용):
+- `https://ezproxy.<학교도메인>/login?url=`
+- `https://<도서관도메인>/proxy?url=`
+- `https://<프록시도메인>/link?url=`
+
+정확한 형식은 본인 학교 도서관의 EZproxy 안내 페이지에서 확인한다.
+설정이 아직 없으면 `bash scripts/setup-proxy.sh`로 대화형 입력이 가능하다.
+프록시를 사용하지 않으려면 `.env`에 `PROXY_ENABLED=false`로 두면 된다.
 
 ### 2a. Headless 모드 (기본)
 
@@ -92,6 +104,7 @@ GUI 브라우저가 표시되며 봇 탐지 우회 확률이 높다.
 ### 2c. 직접 접근 (프록시 없이)
 
 프록시 경유 시 Akamai WAF가 차단하는 OA 출판사 등에 사용.
+`PROXY_ENABLED=false`일 때도 이 경로로만 동작.
 
 ---
 
@@ -140,7 +153,10 @@ node scripts/fetch-paper.js --refetch
 # References 포함 (snowball용 — 기존 스크립트)
 node scripts/read-paper.js --refs <DOI>
 
-# EZproxy 인증 갱신
+# EZproxy 초기 설정 (최초 1회)
+bash scripts/setup-proxy.sh
+
+# EZproxy 인증 세션 생성/갱신
 node scripts/setup-auth.js
 ```
 
@@ -148,10 +164,21 @@ node scripts/setup-auth.js
 
 ## .env 설정
 
+아래는 필요한 키 목록이다. 초기 설정은 `bash scripts/setup-proxy.sh`로 대화형 입력이 가능하며,
+`.env.example`을 복사해 직접 편집해도 된다.
+
 ```
-# EZproxy 인증 (필수)
-KOREA_PORTAL_ID=<포털ID>
-KOREA_PORTAL_PW=<비밀번호>
+# EZproxy 설정 (유료 저널 접근 시)
+PROXY_ENABLED=true
+PROXY_BASE_URL=https://<본인-프록시-호스트>/<경로>?url=
+PROXY_LOGIN_URL=https://<본인-도서관-로그인페이지>
+PROXY_PORTAL_ID=<포털ID>
+PROXY_PORTAL_PW=<비밀번호>
+# (선택) 기관별 커스텀 셀렉터
+PROXY_LOGIN_ID_SELECTOR=
+PROXY_LOGIN_PW_SELECTOR=
+PROXY_LOGIN_SUBMIT_SELECTOR=
+PROXY_LOGIN_PRECLICK_SELECTOR=
 
 # 티어 1 API (UNPAYWALL_EMAIL만 필수, 나머지는 선택)
 UNPAYWALL_EMAIL=<이메일>

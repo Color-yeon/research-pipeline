@@ -26,10 +26,18 @@ findings/
 logs/
 test-results/
 downloads/
+
+# 학회 논문 증분 수집 (로컬 전용 — 레포에서 제외)
 collections/
+.claude/skills/conference-collect/
+scripts/collect-papers.js
+scripts/download-missing-pdfs.js
 
 # 임시 테스트 데이터
 .playwright-form-test*/
+
+# 내부 디버깅/문제 분석 기록 (기관 식별 단서가 들어있어 외부 공개 부적절)
+docs/paper-reader-troubleshooting.md
 
 # OS
 .DS_Store

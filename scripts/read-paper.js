@@ -13,7 +13,14 @@ const fs = require('fs');
 const PROJECT_DIR = path.resolve(__dirname, '..');
 const OUTPUT_DIR = path.join(PROJECT_DIR, 'findings', 'raw_texts');
 const AUTH_STATE_PATH = path.join(PROJECT_DIR, '.playwright-auth.json');
-const PROXY_BASE = 'https://oca.korea.ac.kr/link.n2s?url=';
+
+// .env에서 프록시 설정을 읽는다. 환경변수는 아래 loadEnv() 호출 후에 채워진다.
+// PROXY_ENABLED=false 인 경우 PROXY_BASE는 빈 문자열이 되어 "직접 접근" 모드로 동작한다.
+// 모듈 로드 시점에 한 번 결정되므로, 다른 모듈에서 require할 때도 동일한 값이 노출된다.
+function resolveProxyBase() {
+  if (process.env.PROXY_ENABLED === 'false') return '';
+  return process.env.PROXY_BASE_URL || '';
+}
 
 // CLI 모드에서 추출 결과를 저장하기 전 검증하기 위한 의존성.
 // fetch-paper.js가 이미 사용하던 모듈을 그대로 가져온다.
@@ -77,6 +84,26 @@ function loadEnv() {
   }
 }
 loadEnv();
+
+// loadEnv() 후에 PROXY_BASE를 결정한다. 빈 문자열이면 모든 접근이 직접(프록시 미경유)으로 동작한다.
+const PROXY_BASE = resolveProxyBase();
+
+// 로그인 페이지 도메인 — PROXY_LOGIN_URL과 거기서 도출한 호스트만으로 판별한다.
+// (이전에는 특정 학교 도메인이 하드코딩되어 있었음)
+function getLoginHosts() {
+  const hosts = new Set();
+  const loginUrl = process.env.PROXY_LOGIN_URL || '';
+  if (loginUrl) {
+    try { hosts.add(new URL(loginUrl).host); } catch (e) { /* invalid URL — 무시 */ }
+  }
+  // PROXY_BASE_URL의 호스트도 — 인증 challenge가 같은 호스트에서 나오는 경우가 많다
+  const baseUrl = process.env.PROXY_BASE_URL || '';
+  if (baseUrl) {
+    try { hosts.add(new URL(baseUrl).host); } catch (e) { /* 무시 */ }
+  }
+  return hosts;
+}
+const LOGIN_HOSTS = getLoginHosts();
 
 function doiToSlug(doi) {
   return doi.replace(/^https?:\/\/doi\.org\//, '').replace(/[\/\\:*?"<>|]/g, '_').replace(/_{2,}/g, '_').substring(0, 100);
@@ -144,39 +171,48 @@ async function waitForCloudflare(page, maxWait = 20000) {
   return false;
 }
 
-// 로그인 페이지 감지
+// 로그인 페이지 감지 — .env의 PROXY_LOGIN_URL 호스트와 폼 셀렉터를 기반으로 판별
 async function isLoginPage(page) {
-  const url = page.url();
-  if (url.includes('library.korea.ac.kr/login')) return true;
-  if (url.includes('oca.korea.ac.kr/authapi')) return true;
-  return await page.evaluate(() => !!document.querySelector('#user-id') && !!document.querySelector('#user-pw')).catch(() => false);
+  const idSel = process.env.PROXY_LOGIN_ID_SELECTOR || '#user-id';
+  const pwSel = process.env.PROXY_LOGIN_PW_SELECTOR || '#user-pw';
+  try {
+    const url = new URL(page.url());
+    if (LOGIN_HOSTS.has(url.host)) return true;
+  } catch (e) { /* 무시 */ }
+  return await page.evaluate(([i, p]) => !!document.querySelector(i) && !!document.querySelector(p), [idSel, pwSel]).catch(() => false);
 }
 
-// 도서관 포털 로그인 — 성공 시 storageState 자동 갱신
+// 프록시/도서관 포털 자동 로그인 — 성공 시 storageState 자동 갱신
 async function doLogin(page) {
-  const id = process.env.KOREA_PORTAL_ID;
-  const pw = process.env.KOREA_PORTAL_PW;
-  if (!id || !pw || id === '여기에_포털ID_입력') {
-    _log('  ⚠ .env에 KOREA_PORTAL_ID / KOREA_PORTAL_PW를 설정하세요.');
+  const id = process.env.PROXY_PORTAL_ID;
+  const pw = process.env.PROXY_PORTAL_PW;
+  if (!id || !pw) {
+    _log('  ⚠ .env에 PROXY_PORTAL_ID / PROXY_PORTAL_PW를 설정하세요. (bash scripts/setup-proxy.sh 로 대화형 설정 가능)');
     return false;
   }
 
+  const idSel = process.env.PROXY_LOGIN_ID_SELECTOR || '#user-id';
+  const pwSel = process.env.PROXY_LOGIN_PW_SELECTOR || '#user-pw';
+  const submitSel = process.env.PROXY_LOGIN_SUBMIT_SELECTOR || 'form.needs-validation button[type="submit"], button[type="submit"]';
+  const preClickSel = process.env.PROXY_LOGIN_PRECLICK_SELECTOR || '';
+
   _log('  → 자동 로그인 중...');
   try {
-    await page.waitForSelector('#user-id', { timeout: 10000 });
-    const radio = await page.$('#user-type-1');
-    if (radio) await radio.click();
-    await page.fill('#user-id', id);
-    await page.fill('#user-pw', pw);
+    await page.waitForSelector(idSel, { timeout: 10000 });
+    if (preClickSel) {
+      const pre = await page.$(preClickSel);
+      if (pre) await pre.click();
+    }
+    await page.fill(idSel, id);
+    await page.fill(pwSel, pw);
 
-    // 로그인 폼의 버튼 정확히 클릭
     await Promise.all([
       page.waitForNavigation({ waitUntil: 'networkidle', timeout: 20000 }).catch(() => {}),
-      page.click('form.needs-validation button[type="submit"]'),
+      page.click(submitSel),
     ]);
     await page.waitForTimeout(3000);
 
-    const still = await page.evaluate(() => !!document.querySelector('#user-id')).catch(() => false);
+    const still = await page.evaluate((sel) => !!document.querySelector(sel), idSel).catch(() => false);
     if (still) {
       _log('  ✗ 로그인 실패 (아이디/비밀번호 확인)');
       return false;
@@ -194,20 +230,23 @@ async function doLogin(page) {
 // 단일 논문 읽기 (같은 persistent context에서 로그인+접근)
 async function readPaper(ctx, url, options = {}) {
   const { includeRefs = false, timeout = 45000 } = options;
-  const proxyUrl = PROXY_BASE + url;
+  // PROXY_BASE가 비어있으면 (프록시 미설정 또는 PROXY_ENABLED=false) 항상 직접 접근
+  const proxyEnabled = !!PROXY_BASE;
+  const proxyUrl = proxyEnabled ? PROXY_BASE + url : url;
   let page = await ctx.newPage();
 
   try {
     // 오픈 액세스 출판사는 프록시 없이 직접 접근 (Akamai WAF 차단 방지)
     // DOI 리다이렉트도 Akamai를 트리거하므로, DOI→실제URL 변환 후 직접 접근
     const oa = isOpenAccess(url);
-    let targetUrl = oa ? url : proxyUrl;
-    if (oa && url.includes('doi.org')) {
+    // 프록시 비활성이면 OA 여부와 무관하게 직접 접근
+    let targetUrl = (oa || !proxyEnabled) ? url : proxyUrl;
+    if ((oa || !proxyEnabled) && url.includes('doi.org')) {
       _log(`  → DOI 변환 중...`);
       targetUrl = await resolveDoi(url);
       _log(`  → 변환 완료: ${targetUrl}`);
     }
-    _log(`  → 접근 중: ${url}${oa ? ' (OA 직접)' : ''}`);
+    _log(`  → 접근 중: ${url}${oa ? ' (OA 직접)' : (proxyEnabled ? '' : ' (직접)')}`);
     try {
       await page.goto(targetUrl, { waitUntil: 'networkidle', timeout });
     } catch {
@@ -367,22 +406,27 @@ if (require.main === module) {
   });
 
   try {
-    // 인증 상태 없으면 선행 로그인 시도
+    // 인증 상태 없으면 선행 로그인 시도 — .env의 PROXY_LOGIN_URL 이용
     if (!hasAuth) {
-      console.log('인증 상태 없음 — EZproxy 로그인 시도...');
-      const loginPage = await ctx.newPage();
-      try {
-        await loginPage.goto('https://library.korea.ac.kr/login', {
-          waitUntil: 'domcontentloaded', timeout: 20000,
-        });
-        await loginPage.waitForTimeout(2000);
-        if (await isLoginPage(loginPage)) {
-          await doLogin(loginPage);
+      const loginUrl = process.env.PROXY_LOGIN_URL || '';
+      if (!loginUrl) {
+        console.log('인증 상태 없음 & PROXY_LOGIN_URL 미설정 — 선행 로그인 스킵 (직접 접근 시도)');
+      } else {
+        console.log('인증 상태 없음 — EZproxy 로그인 시도...');
+        const loginPage = await ctx.newPage();
+        try {
+          await loginPage.goto(loginUrl, {
+            waitUntil: 'domcontentloaded', timeout: 20000,
+          });
+          await loginPage.waitForTimeout(2000);
+          if (await isLoginPage(loginPage)) {
+            await doLogin(loginPage);
+          }
+        } catch (e) {
+          console.log(`  ⚠ 선행 로그인 실패: ${e.message}`);
+        } finally {
+          await loginPage.close();
         }
-      } catch (e) {
-        console.log(`  ⚠ 선행 로그인 실패: ${e.message}`);
-      } finally {
-        await loginPage.close();
       }
     }
 

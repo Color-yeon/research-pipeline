@@ -35,7 +35,7 @@ Claude Code가 연구 에이전트로 동작하며, 아래 원칙을 **반드시
 논문 전문은 **검색 단계에서 즉시 수집**한다 (Tier 1 API → Tier 2 브라우저).
 - `/research-search`가 논문 발견 즉시 `node scripts/fetch-paper.js`로 전문 확보 시도
 - Tier 1/2 실패 논문만 `/research-read`(Tier 3 Playwright MCP)로 후속 처리
-- 프록시 URL: `https://oca.korea.ac.kr/link.n2s?url=<원본URL>`
+- 프록시 URL은 `.env`의 `PROXY_BASE_URL` (예: `https://<프록시호스트>/?url=`) + 원본 URL로 구성된다. 사용자 기관마다 형식이 다르므로 스크립트는 환경변수에서 읽어 동작한다. `PROXY_ENABLED=false`면 프록시 없이 직접 접근한다.
 - WebFetch로 논문 본문을 읽지 마라 (검색/DOI확인 전용)
 - 상세 절차: `.claude/skills/research-read/docs/proxy-access.md` 참조
 

@@ -9,7 +9,21 @@ const https = require('https');
 
 const OUTPUT_DIR = path.resolve(__dirname, '..', 'downloads', 'si-papers');
 const AUTH_STATE_PATH = path.resolve(__dirname, '..', '.playwright-auth.json');
-const PROXY_BASE = 'https://oca.korea.ac.kr/link.n2s?url=';
+
+// .env에서 프록시 베이스 URL 로드 (없거나 PROXY_ENABLED=false면 빈 문자열)
+function loadEnv() {
+  const envPath = path.resolve(__dirname, '..', '.env');
+  if (!fs.existsSync(envPath)) return;
+  for (const line of fs.readFileSync(envPath, 'utf-8').split('\n')) {
+    const t = line.trim();
+    if (!t || t.startsWith('#')) continue;
+    const eq = t.indexOf('=');
+    if (eq === -1) continue;
+    if (!process.env[t.substring(0, eq).trim()]) process.env[t.substring(0, eq).trim()] = t.substring(eq + 1).trim();
+  }
+}
+loadEnv();
+const PROXY_BASE = (process.env.PROXY_ENABLED === 'false') ? '' : (process.env.PROXY_BASE_URL || '');
 
 // ACS 논문별 SI 다운로드
 const ACS_PAPERS = [
@@ -169,6 +183,10 @@ async function downloadProxyPaper(context, paper) {
     return true;
   }
 
+  if (!PROXY_BASE) {
+    console.log(`\n[스킵] ${paper.description} — PROXY_BASE_URL 미설정으로 프록시 경유 불가`);
+    return false;
+  }
   console.log(`\n[프록시] ${paper.description}`);
   const proxyUrl = PROXY_BASE + encodeURIComponent(paper.articleUrl);
 

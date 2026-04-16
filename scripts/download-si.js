@@ -9,7 +9,21 @@ const fs = require('fs');
 
 const OUTPUT_DIR = path.resolve(__dirname, '..', 'downloads', 'si-papers');
 const AUTH_STATE_PATH = path.resolve(__dirname, '..', '.playwright-auth.json');
-const PROXY_BASE = 'https://oca.korea.ac.kr/link.n2s?url=';
+
+// .env에서 프록시 베이스 URL 로드 (없거나 PROXY_ENABLED=false면 빈 문자열 — useProxy: true 항목은 자동 스킵)
+function loadEnv() {
+  const envPath = path.resolve(__dirname, '..', '.env');
+  if (!fs.existsSync(envPath)) return;
+  for (const line of fs.readFileSync(envPath, 'utf-8').split('\n')) {
+    const t = line.trim();
+    if (!t || t.startsWith('#')) continue;
+    const eq = t.indexOf('=');
+    if (eq === -1) continue;
+    if (!process.env[t.substring(0, eq).trim()]) process.env[t.substring(0, eq).trim()] = t.substring(eq + 1).trim();
+  }
+}
+loadEnv();
+const PROXY_BASE = (process.env.PROXY_ENABLED === 'false') ? '' : (process.env.PROXY_BASE_URL || '');
 
 // 다운로드 대상 목록
 const DOWNLOADS = [
@@ -48,7 +62,11 @@ const DOWNLOADS = [
 ];
 
 async function downloadWithBrowser(item, context) {
-  const targetUrl = item.useProxy ? PROXY_BASE + encodeURIComponent(item.url) : item.url;
+  // 프록시 사용 요청이지만 PROXY_BASE가 비어있으면 직접 접근으로 폴백
+  if (item.useProxy && !PROXY_BASE) {
+    console.log(`[경고] ${item.name} — useProxy=true이지만 PROXY_BASE_URL 미설정, 직접 접근으로 폴백`);
+  }
+  const targetUrl = (item.useProxy && PROXY_BASE) ? PROXY_BASE + encodeURIComponent(item.url) : item.url;
   const outPath = path.join(OUTPUT_DIR, item.name);
 
   // 이미 유효한 PDF가 있으면 스킵
