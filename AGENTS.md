@@ -61,7 +61,7 @@
 
 ## 자동화 훅 — 에이전트별 취급
 
-Claude Code 사용 시에는 `.claude/settings.json`에 등록된 4개 훅이 추가로 동작한다(PreCompact, Stop verify-fix, PreToolUse pipeline-guard, PostToolUse search-wisdom).
+Claude Code 사용 시에는 `.claude/settings.json`에 등록된 훅들이 추가로 동작한다(PreCompact 체크포인트, Stop verify-fix, PreToolUse pipeline-guard, PreToolUse search-wisdom-pretool).
 Codex / Gemini 사용 시에는 훅이 호출되지 않으므로, 같은 품질 보장을 위해 훅 로직의 핵심을 **스킬 본문의 0단계(선행조건 검사)**와 **prd.json의 검증 태스크(verify-fix 대체)**로 이식해 두었다. 따라서 어느 에이전트로 돌려도 동일한 커버리지·순서 보장이 유지된다.
 
 자세한 내용은 `CLAUDE.md`의 "자동화 훅" 섹션 참조.
