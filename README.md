@@ -492,13 +492,11 @@ Every `WebSearch` call logs query / source / result count / academic ratio into 
 
 1. **완전한 문헌 커버리지** — 관련 논문을 하나라도 놓치면 리뷰어가 "왜 이 논문은 고려하지 않았는가"라고 지적하는 순간 논문의 신뢰도가 무너집니다. 상위 결과에서 멈추지 않고, 다양한 쿼리와 소스를 조합해 빈틈을 줄입니다.
 2. **DOI는 검색으로 확인** — LLM은 DOI를 할루시네이션할 수 있습니다. 실존이 검색으로 확인된 논문만 기록합니다.
-3. **Git 커밋은 하지 않습니다** — 파이프라인은 자동으로 커밋하지 않습니다. 사용자가 직접 검토 후 커밋합니다.
 
 ## 🇺🇸 Core principles
 
 1. **Complete literature coverage** — If you miss even one related paper, a reviewer asking "why wasn't this paper considered?" can collapse your credibility. The pipeline refuses to stop at top results and varies queries / sources to close gaps.
 2. **DOIs are verified by search** — LLMs hallucinate DOIs. Only papers whose existence is confirmed by search are recorded.
-3. **No automatic Git commits** — The pipeline never commits on its own. The user reviews and commits manually.
 
 ---
 
