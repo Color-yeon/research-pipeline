@@ -142,7 +142,7 @@ stories.append({
 
 1. findings/ 디렉토리에서 모든 *_blocked.json 파일을 읽는다
 2. 각 논문에 대해:
-   a. `mcp__chrome-mcp__chrome_navigate` → `https://oca.korea.ac.kr/link.n2s?url=<DOI>`
+   a. `mcp__chrome-mcp__chrome_navigate` → `${PROXY_BASE_URL}<DOI>` (PROXY_BASE_URL은 .env 값)
    b. `mcp__chrome-mcp__chrome_get_visible_text` → 텍스트 추출
       (토큰 초과로 파일 저장 시 → Read 도구로 300줄씩 나눠 읽기. 포기하지 마라!)
    c. 증거 카드 작성
