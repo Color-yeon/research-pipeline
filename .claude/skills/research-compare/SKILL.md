@@ -5,6 +5,23 @@ description: "여러 논문의 방법론, 결과, 주장을 교차 비교하는 
 
 # 논문 교차 비교 스킬
 
+## 0단계: 선행 조건 검사
+
+이 스킬을 실행하기 전에 **반드시** 아래 명령을 Bash 도구로 실행하라.
+
+```bash
+node scripts/lib/pipeline-guard.mjs research-compare
+```
+
+- exit 0 → 통과. 다음 단계로 진행한다.
+- exit code 가 0 이 아니면 → stderr 의 사유를 사용자에게 그대로 보고하고
+  **실행을 즉시 중단**하라. 필요한 선행 스킬(예: `/research-search`)을
+  먼저 수행해야 한다.
+
+Claude Code 에서는 `.claude/settings.json` 의 PreToolUse 훅이 같은 검사를
+이벤트 수준에서 추가로 수행한다. 하지만 Codex·Gemini 경로에서는 이 명령이
+유일한 방어선이다.
+
 ## 개요
 
 2개 이상의 논문을 체계적으로 교차 비교하여, 방법론/결과/주장의 합의점과 불일치점을 분석하고, 연구 갭을 식별한다. 비교 결과는 구조화된 대조표와 분석 리포트로 출력한다.
@@ -163,6 +180,22 @@ findings/keyword_combination_1.md
 ## DOI 목록
 (전체 DOI 정리)
 ```
+
+## 종료 단계: 체크포인트 저장
+
+스킬 실행을 완료하기 직전에 **반드시** 아래 명령을 Bash 도구로 실행하라.
+
+```bash
+node scripts/lib/checkpoint.mjs
+```
+
+findings/ 전체 상태를 `findings/_checkpoint.json` 에 기록하여 다음 태스크
+(또는 컨텍스트 압축 이후) 가 진행 상황을 이어갈 수 있게 한다. 실패해도
+스킬은 정상 종료로 간주한다(베스트 에포트).
+
+Claude Code 에서는 `.claude/settings.json` 의 PreCompact 훅이 같은 일을
+컨텍스트 압축 직전에 수행한다. 하지만 Codex·Gemini 경로에서는 이 명령이
+유일한 체크포인트 경로다.
 
 ## 참고 문서
 
