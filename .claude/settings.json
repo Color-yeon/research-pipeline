@@ -1,4 +1,40 @@
 {
+  "permissions": {
+    "_comment": "파이프라인의 '세이프 모드' 기본 allowlist. scripts/run-agent.sh가 --dangerously-skip-permissions 로 Claude Code를 기동하면 이 목록은 사실상 무시되고 모든 도구 호출이 자동 허용됩니다. CLAUDE_SAFE_MODE=1 환경변수를 붙이면 skip-permissions 플래그가 빠지고 이 allowlist가 적용됩니다. 위험 가능성이 높은 네트워크/쉘 명령(curl, wget, sudo, rm -rf 등)은 아래에서 명시적으로 차단합니다.",
+    "allow": [
+      "WebSearch",
+      "WebFetch",
+      "Bash(node scripts/*.js:*)",
+      "Bash(node scripts/lib/*.js:*)",
+      "Bash(node scripts/hooks/*.mjs:*)",
+      "Bash(node scripts/*.mjs:*)",
+      "Bash(node scripts/lib/*.mjs:*)",
+      "Bash(bash scripts/*.sh:*)",
+      "Bash(./start-research.sh:*)",
+      "Bash(npm install:*)",
+      "Bash(npm run:*)",
+      "Bash(npx playwright:*)",
+      "Bash(mkdir -p findings/*)",
+      "Bash(mkdir -p logs)",
+      "Bash(ls findings/*)",
+      "Bash(cat findings/*.md)",
+      "mcp__playwright__*",
+      "mcp__3ec53b18-4ffd-4f76-9b3d-f7d8ee47227e__notion-*"
+    ],
+    "deny": [
+      "Bash(rm -rf /*)",
+      "Bash(rm -rf ~*)",
+      "Bash(rm -rf $HOME*)",
+      "Bash(sudo *)",
+      "Bash(curl *)",
+      "Bash(wget *)",
+      "Bash(ssh *)",
+      "Bash(scp *)",
+      "Bash(chmod 777 *)",
+      "Bash(git push --force*)",
+      "Bash(git push -f*)"
+    ]
+  },
   "hooks": {
     "PreCompact": [
       {

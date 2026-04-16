@@ -160,6 +160,45 @@ fi
 AGENT_DISPLAY="${AGENT:-$(grep -E '^AGENT=' "$PROJECT_DIR/.env" 2>/dev/null | head -n 1 | cut -d'=' -f2- || echo claude)}"
 AGENT_DISPLAY="${AGENT_DISPLAY:-claude}"
 
+# ── 선행 CLI 존재 검증 ─────────────────────────────────────────────
+# 파이프라인이 의존하는 외부 CLI가 모두 설치되어 있는지 미리 확인한다.
+# 없으면 sentinel 이 exit 127 로 10회 재시도하면서 4분마다 같은 로그만 쌓이는 문제를
+# 방지한다(개선 이전의 가장 흔한 "왜 안 돼?" UX 함정이었음).
+missing=0
+require_cli() {
+    local cmd="$1"
+    local hint="$2"
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+        echo "❌ 필수 CLI 누락: '$cmd'" >&2
+        [ -n "$hint" ] && echo "   설치 안내: $hint" >&2
+        missing=1
+    fi
+}
+
+require_cli node "https://nodejs.org/ (또는 nvm/asdf 로 설치)"
+
+# Ralph TUI — 절대경로($RALPH_BIN) 또는 PATH 중 하나에만 있어도 OK.
+if [ ! -x "$RALPH_BIN" ] && ! command -v ralph-tui >/dev/null 2>&1; then
+    echo "❌ Ralph TUI 를 찾지 못했습니다." >&2
+    echo "   확인한 경로: $RALPH_BIN (파일 없음/실행 권한 없음)" >&2
+    echo "   그리고 \$PATH 에서도 'ralph-tui' 를 찾지 못했습니다." >&2
+    echo "   설치 안내: bun 으로 ralph-tui 를 설치하거나, RALPH_BIN 환경변수로 실제 경로를 지정하세요." >&2
+    missing=1
+fi
+
+# 선택한 에이전트 CLI
+case "$AGENT_DISPLAY" in
+    claude) require_cli claude "https://claude.com/claude-code" ;;
+    codex)  require_cli codex "https://github.com/openai/codex" ;;
+    gemini) require_cli gemini-cli "npm i -g @google/gemini-cli" ;;
+esac
+
+if [ "$missing" -eq 1 ]; then
+    echo "" >&2
+    echo "위 CLI 를 설치한 뒤 다시 실행해 주세요. (그 외 단계는 CLI 가 모두 준비된 뒤에야 의미가 있습니다.)" >&2
+    exit 1
+fi
+
 echo "=========================================="
 echo " 연구 자동화 파이프라인"
 echo " 모드:    $MODE"

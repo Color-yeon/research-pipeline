@@ -32,6 +32,16 @@ fi
 
 AGENT="${AGENT:-claude}"
 
+# ── 세이프 모드 옵트아웃 ─────────────────────────────────────────────
+# CLAUDE_SAFE_MODE=1 이면 Claude Code의 --dangerously-skip-permissions 를 제거하고
+# .claude/settings.json 의 permissions.allow/deny 가 적용되도록 한다.
+# 기본값은 "빠른 자동화 우선" — 즉 skip-permissions 사용. 신규 사용자나 공용 머신에서
+# 돌릴 때는 CLAUDE_SAFE_MODE=1 ./start-research.sh ... 형태로 호출하길 권장한다.
+CLAUDE_FLAGS=()
+if [ "${CLAUDE_SAFE_MODE:-0}" != "1" ]; then
+    CLAUDE_FLAGS+=(--dangerously-skip-permissions)
+fi
+
 # ── 에이전트별 대화형 실행 ───────────────────────────────────────────
 run_interactive() {
     local sys_prompt_file="$1"
@@ -39,10 +49,10 @@ run_interactive() {
     case "$AGENT" in
         claude)
             if [ -n "$sys_prompt_file" ] && [ -f "$sys_prompt_file" ]; then
-                exec claude --dangerously-skip-permissions \
+                exec claude "${CLAUDE_FLAGS[@]}" \
                     --append-system-prompt "$(cat "$sys_prompt_file")"
             else
-                exec claude --dangerously-skip-permissions
+                exec claude "${CLAUDE_FLAGS[@]}"
             fi
             ;;
 
@@ -92,7 +102,7 @@ run_exec() {
 
     case "$AGENT" in
         claude)
-            exec claude --dangerously-skip-permissions -p "$prompt"
+            exec claude "${CLAUDE_FLAGS[@]}" -p "$prompt"
             ;;
 
         codex)

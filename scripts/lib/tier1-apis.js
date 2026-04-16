@@ -9,21 +9,8 @@ const fs = require('fs');
 
 const PROJECT_DIR = path.resolve(__dirname, '..', '..');
 
-// .env 로드
-function loadEnv() {
-  const envPath = path.join(PROJECT_DIR, '.env');
-  if (!fs.existsSync(envPath)) return;
-  for (const line of fs.readFileSync(envPath, 'utf-8').split('\n')) {
-    const t = line.trim();
-    if (!t || t.startsWith('#')) continue;
-    const eq = t.indexOf('=');
-    if (eq === -1) continue;
-    const key = t.substring(0, eq).trim();
-    const val = t.substring(eq + 1).trim();
-    if (!process.env[key] && val) process.env[key] = val;
-  }
-}
-loadEnv();
+// .env 로드 — 공용 로더로 통일 (따옴표 처리/중복 파싱 방지를 한 곳에 모음)
+require('./env-loader').loadEnv();
 
 // HTTP GET 유틸리티
 function httpGet(url, options = {}) {

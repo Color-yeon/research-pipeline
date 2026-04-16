@@ -25,11 +25,13 @@ read_env_value() {
 }
 
 # .env에 키-값 쓰기 (기존 키가 있으면 교체, 없으면 추가)
+# 파일 생성/수정 이후에는 항상 chmod 600 으로 소유자 전용 권한을 강제한다.
 write_env_value() {
     local key="$1"
     local value="$2"
     if [ ! -f "$ENV_FILE" ]; then
         touch "$ENV_FILE"
+        chmod 600 "$ENV_FILE" 2>/dev/null || true
     fi
     if grep -qE "^${key}=" "$ENV_FILE" 2>/dev/null; then
         # macOS/BSD sed와 GNU sed 모두 호환되도록 임시 파일 사용
@@ -41,6 +43,8 @@ write_env_value() {
     else
         echo "${key}=${value}" >> "$ENV_FILE"
     fi
+    # 기존 .env 파일이 세계-읽기 가능 상태였을 수 있으므로 매번 재강제
+    chmod 600 "$ENV_FILE" 2>/dev/null || true
 }
 
 # 이미 충분히 설정되어 있는지 확인
@@ -158,5 +162,5 @@ fi
 
 echo ""
 echo "✓ 프록시 설정을 .env 파일에 저장했습니다."
-echo "  파일: $ENV_FILE"
+echo "  파일: $ENV_FILE (chmod 600 — 소유자 전용)"
 echo "  추가 API 키(SEMANTIC_SCHOLAR_API_KEY 등)는 .env.example을 참고하여 직접 추가하세요."

@@ -16,21 +16,8 @@ const OPENALEX_API = 'https://api.openalex.org';
 const PAGE_SIZE = 100;
 const MAX_OFFSET = 999;
 
-// .env 로드
-function loadEnv() {
-  const envPath = path.join(__dirname, '..', '..', '.env');
-  if (!fs.existsSync(envPath)) return;
-  for (const line of fs.readFileSync(envPath, 'utf-8').split('\n')) {
-    const t = line.trim();
-    if (!t || t.startsWith('#')) continue;
-    const eq = t.indexOf('=');
-    if (eq === -1) continue;
-    const key = t.substring(0, eq).trim();
-    const val = t.substring(eq + 1).trim();
-    if (!process.env[key] && val) process.env[key] = val;
-  }
-}
-loadEnv();
+// .env 로드 — 공용 로더로 통일
+require('./env-loader').loadEnv();
 
 const hasS2Key = !!(process.env.SEMANTIC_SCHOLAR_API_KEY && process.env.SEMANTIC_SCHOLAR_API_KEY.length > 5);
 const userEmail = process.env.UNPAYWALL_EMAIL || 'research-pipeline@example.com';

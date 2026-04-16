@@ -30,7 +30,7 @@ import {
   rmSync,
   mkdirSync,
 } from 'fs';
-import { dirname, join } from 'path';
+import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { buildCheckpoint } from './checkpoint.mjs';
 
@@ -63,6 +63,30 @@ function toKebab(s) {
       .replace(/^-+|-+$/g, '')
       .slice(0, 60) || 'unnamed'
   );
+}
+
+/**
+ * 방어적 경로 가드.
+ * 계산된 slug/디렉토리가 실제로 기대한 부모 디렉토리 내부를 가리키는지 확인한다.
+ * toKebab 이 이미 경로 구분자(`/`, `\`, `:` 등)와 `..` 시퀀스를 모두 하이픈으로
+ * 치환하므로 현재 구현에서는 이론적으로 걸릴 일이 없지만, 미래에 toKebab 이 바뀌거나
+ * slug 가 외부 입력에서 그대로 흘러 들어올 때 경로 탈출(즉, archive/ 바깥으로 쓰기)을
+ * 프로세스 전체에서 마지막에 거르는 안전 레일이다.
+ *
+ * @param {string} childPath — join(PARENT, ...something) 결과
+ * @param {string} parentDir — 허용된 부모 디렉토리
+ * @throws Error — childPath 가 parentDir 아래가 아니면 즉시 throw
+ */
+function assertWithin(childPath, parentDir) {
+  const resolvedChild = resolve(childPath);
+  const resolvedParent = resolve(parentDir);
+  const parentWithSep = resolvedParent.endsWith('/') ? resolvedParent : resolvedParent + '/';
+  if (resolvedChild !== resolvedParent && !resolvedChild.startsWith(parentWithSep)) {
+    throw new Error(
+      `경로 가드 실패: '${resolvedChild}' 가 '${resolvedParent}' 내부가 아닙니다. (slug/입력 확인 필요)`,
+    );
+  }
+  return resolvedChild;
 }
 
 /** YYYYMMDD-HHMMSS 형식 타임스탬프. */
@@ -177,6 +201,9 @@ export function archiveCurrent({ name, reason } = {}) {
   const ts = tsNow();
   const dirName = `${slug}-${ts}`;
   const destDir = join(ARCHIVE_DIR, dirName);
+
+  // 방어적 가드 — slug 가 어떻게 들어와도 결과 경로가 archive/ 내부이어야 한다.
+  assertWithin(destDir, ARCHIVE_DIR);
 
   if (existsSync(destDir)) {
     return {
@@ -315,6 +342,10 @@ export function restoreArchived(slug) {
   }
 
   const srcDir = join(ARCHIVE_DIR, target.dirName);
+
+  // 방어적 가드 — target.dirName 이 디스크에서 읽어온 값이긴 해도,
+  // 외부에서 심볼릭 링크 등을 통해 archive/ 바깥을 가리키게 만들 가능성을 차단.
+  assertWithin(srcDir, ARCHIVE_DIR);
 
   // 1) 현재 루트 상태 자동 보존 (swap)
   //    아카이브할 게 없으면 noop — 그대로 복원 진행.

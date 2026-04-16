@@ -10,19 +10,8 @@ const fs = require('fs');
 const OUTPUT_DIR = path.resolve(__dirname, '..', 'downloads', 'si-papers');
 const AUTH_STATE_PATH = path.resolve(__dirname, '..', '.playwright-auth.json');
 
-// .env에서 프록시 베이스 URL 로드 (없거나 PROXY_ENABLED=false면 빈 문자열 — useProxy: true 항목은 자동 스킵)
-function loadEnv() {
-  const envPath = path.resolve(__dirname, '..', '.env');
-  if (!fs.existsSync(envPath)) return;
-  for (const line of fs.readFileSync(envPath, 'utf-8').split('\n')) {
-    const t = line.trim();
-    if (!t || t.startsWith('#')) continue;
-    const eq = t.indexOf('=');
-    if (eq === -1) continue;
-    if (!process.env[t.substring(0, eq).trim()]) process.env[t.substring(0, eq).trim()] = t.substring(eq + 1).trim();
-  }
-}
-loadEnv();
+// .env 로드 — 공용 로더로 통일 (PROXY_ENABLED=false면 PROXY_BASE 가 빈 문자열이 되어 useProxy:true 항목은 자동 스킵)
+require('./lib/env-loader').loadEnv();
 const PROXY_BASE = (process.env.PROXY_ENABLED === 'false') ? '' : (process.env.PROXY_BASE_URL || '');
 
 // 다운로드 대상 목록

@@ -34,6 +34,7 @@ CONSECUTIVE_FAIL_LIMIT=3
 COOLDOWN_SECONDS=360
 CHECK_INTERVAL=60
 FALLBACK_RESET_HOUR=6   # 파싱 실패 시 폴백: 오전 6시
+MAX_WAIT_CEILING=86400  # 단일 대기의 상한 (24시간) — 파싱 버그로 무한 대기에 빠지는 것을 방지
 
 mkdir -p "$LOG_DIR"
 
@@ -43,6 +44,49 @@ session_id=""
 
 log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$SENTINEL_LOG"
+}
+
+# SIGINT/SIGTERM 처리 — 사용자가 Ctrl+C를 누르면 즉시 종료 로그를 남기고 빠져나간다.
+trap 'log "⚠ 사용자 인터럽트 감지 — Sentinel 종료"; exit 130' INT TERM
+
+# 취소 가능한 대기 루프.
+# 인자: 총 대기 초, 표시 라벨
+# - 30초 단위로 쪼개서 sleep 하므로 Ctrl+C 에 빠르게 반응한다.
+# - 10분마다 남은 시간을 로그로 출력해 사용자에게 진행 상황을 보여 준다.
+# - 상한(MAX_WAIT_CEILING)을 넘는 입력은 상한으로 강제한다.
+interruptible_sleep() {
+    local total="$1"
+    local label="${2:-대기}"
+
+    # 입력 검증 — 숫자가 아니면 기본값(60초)
+    if ! [[ "$total" =~ ^[0-9]+$ ]]; then
+        log "⚠ interruptible_sleep: 비정상 대기 시간 '$total' → 60초로 대체"
+        total=60
+    fi
+
+    if [ "$total" -gt "$MAX_WAIT_CEILING" ]; then
+        log "⚠ 대기 시간이 상한(${MAX_WAIT_CEILING}초=24시간)을 초과하여 상한으로 제한"
+        total="$MAX_WAIT_CEILING"
+    fi
+
+    local remaining="$total"
+    local last_progress_log=0
+    local chunk=30
+
+    while [ "$remaining" -gt 0 ]; do
+        local step="$chunk"
+        [ "$remaining" -lt "$chunk" ] && step="$remaining"
+        sleep "$step"
+        remaining=$(( remaining - step ))
+        local elapsed=$(( total - remaining ))
+        # 10분마다 또는 마지막 직전에 진행 로그
+        if [ $(( elapsed - last_progress_log )) -ge 600 ] || [ "$remaining" -eq 0 ]; then
+            local rm=$(( remaining / 60 ))
+            local rs=$(( remaining % 60 ))
+            log "⏳ ${label} 진행 중 — 남은 시간: ${rm}분 ${rs}초 (Ctrl+C로 중단 가능)"
+            last_progress_log="$elapsed"
+        fi
+    done
 }
 
 # === Playwright persistent profile 확인 (논문 전문 접근용) ===
@@ -74,14 +118,16 @@ check_incomplete() {
 }
 
 # 로그에서 리셋 시간 파싱 (예: "resets 6am", "resets 2pm", "resets 12:30pm")
+# stdout으로 시간(0~23)만 출력한다. 호출자는 종료 코드로 파싱 성공/폴백을 구분한다.
+#   return 0 = 로그에서 실제 리셋 시간을 파싱함
+#   return 1 = 파싱 실패 → FALLBACK_RESET_HOUR 반환 (대기가 예상보다 길 수 있음)
 parse_reset_hour_from_log() {
     local reset_str reset_hour
-    # "resets Xam" 또는 "resets Xpm" 패턴 추출
     reset_str=$(tail -100 "$RALPH_LOG" 2>/dev/null | grep -o "resets [0-9:]*[ap]m" | tail -1 || echo "")
 
     if [ -z "$reset_str" ]; then
         echo "$FALLBACK_RESET_HOUR"
-        return
+        return 1
     fi
 
     # 시간 추출 (예: "resets 6am" → 6, "resets 2pm" → 14, "resets 12:30pm" → 12)
@@ -94,14 +140,21 @@ parse_reset_hour_from_log() {
     fi
 
     echo "$reset_hour"
+    return 0
 }
 
 # 다음 리셋 시간까지 남은 초 계산 (로그에서 리셋 시간을 자동 감지)
 seconds_until_reset() {
-    local reset_hour now_hour now_min now_sec total_now total_reset
+    local reset_hour now_hour now_min now_sec total_now total_reset parse_rc
 
     reset_hour=$(parse_reset_hour_from_log)
-    log "   감지된 리셋 시간: 오전/오후 ${reset_hour}시"
+    parse_rc=$?
+    if [ "$parse_rc" -eq 0 ]; then
+        log "   감지된 리셋 시간: 오전/오후 ${reset_hour}시"
+    else
+        log "   ⚠ ralph_run.log 에서 'resets Xam/pm' 패턴을 찾지 못해 폴백(오전 ${FALLBACK_RESET_HOUR}시)을 사용합니다."
+        log "   ⚠ 실제 리셋 시간과 다르면 대기가 의도보다 길 수 있습니다. Ctrl+C 로 중단 후 FALLBACK_RESET_HOUR 를 조정해 재실행하세요."
+    fi
 
     now_hour=$(date '+%H' | sed 's/^0//')
     now_min=$(date '+%M' | sed 's/^0//')
@@ -170,13 +223,13 @@ while true; do
                 log "   대기 시간: ${wait_mins}분 (${wait_secs}초)"
                 log "   예상 재개: ${reset_time}"
 
-                sleep "$wait_secs"
+                interruptible_sleep "$wait_secs" "Rate limit 리셋 대기"
 
                 log "⏰ Rate limit 리셋 완료. 재개합니다."
                 ensure_playwright_profile
             else
                 log "⚠ 미완료 태스크 감지. ${CHECK_INTERVAL}초 후 재개..."
-                sleep "$CHECK_INTERVAL"
+                interruptible_sleep "$CHECK_INTERVAL" "미완료 태스크 재시도 대기"
                 ensure_playwright_profile
             fi
 
@@ -199,7 +252,7 @@ while true; do
         wait_secs=$(seconds_until_reset)
         wait_mins=$(( wait_secs / 60 ))
         log "⏳ Rate limit 감지! ${wait_mins}분 대기 후 재개..."
-        sleep "$wait_secs"
+        interruptible_sleep "$wait_secs" "Rate limit 리셋 대기 (비정상 종료 이후)"
         log "⏰ Rate limit 리셋 완료. 재개합니다."
         consecutive_fails=0
         continue
@@ -214,11 +267,11 @@ while true; do
     # 연속 실패 시 쿨다운
     if [ "$consecutive_fails" -ge "$CONSECUTIVE_FAIL_LIMIT" ]; then
         log "⚠ 연속 $CONSECUTIVE_FAIL_LIMIT회 실패. ${COOLDOWN_SECONDS}초 쿨다운..."
-        sleep "$COOLDOWN_SECONDS"
+        interruptible_sleep "$COOLDOWN_SECONDS" "연속 실패 쿨다운"
         consecutive_fails=0
     else
         log "${CHECK_INTERVAL}초 후 재시작..."
-        sleep "$CHECK_INTERVAL"
+        interruptible_sleep "$CHECK_INTERVAL" "재시작 대기"
     fi
 done
 
