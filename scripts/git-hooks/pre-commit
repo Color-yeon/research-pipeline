@@ -1,0 +1,32 @@
+#!/bin/sh
+# ─────────────────────────────────────────────────────────────────────
+# pre-commit 훅 — 스킬 정본과 파생물 동기화 안전망
+#
+# 원리:
+#   .claude/skills/ 에 staged 변경이 있으면, 커밋 전에 npm run sync-agents 를
+#   실행하여 .codex/skills/ 와 .gemini/commands/ 를 최신 상태로 맞춘다.
+#   파생물은 .gitignore 로 제외되어 있으므로 커밋에 자동 추가되진 않지만,
+#   사용자의 로컬 작업 디렉토리가 항상 정합성을 유지하도록 보장한다.
+#
+# 활성화:
+#   이 훅은 `npm install` 또는 `npm run sync-agents` 실행 시
+#   scripts/postinstall.mjs 가 `git config core.hooksPath scripts/git-hooks`
+#   를 자동 설정해 활성화된다. 수동 활성화가 필요하면 동일 명령을 직접 실행하면 된다.
+#
+# 비활성화:
+#   이 훅이 귀찮으면 `git config --unset core.hooksPath` 로 임시 해제할 수 있다.
+#   또는 특정 커밋만 건너뛰려면 `git commit --no-verify` (신중히 사용).
+# ─────────────────────────────────────────────────────────────────────
+set -e
+
+# .claude/skills/ 하위 파일이 스테이징되었는지 검사
+if git diff --cached --name-only --diff-filter=ACMR | grep -q '^\.claude/skills/'; then
+    printf '[pre-commit] .claude/skills/ 변경 감지 — sync-agent-assets 실행 중...\n' >&2
+    if ! npm run sync-agents --silent >/dev/null 2>&1; then
+        printf '[pre-commit] ❌ sync-agent-assets 실패. 수동으로 "npm run sync-agents" 실행 후 다시 커밋하세요.\n' >&2
+        exit 1
+    fi
+    printf '[pre-commit] ✓ 파생물(.codex/skills/, .gemini/commands/) 갱신 완료\n' >&2
+fi
+
+exit 0
