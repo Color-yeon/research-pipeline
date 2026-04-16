@@ -10,6 +10,25 @@ LOG_DIR="$PROJECT_DIR/logs"
 SENTINEL_LOG="$LOG_DIR/sentinel.log"
 RALPH_LOG="$LOG_DIR/ralph_run.log"
 
+# ── 에이전트 선택 로드 ─────────────────────────────────────────────
+# start-research.sh 에서 export 된 AGENT 가 우선, 없으면 .env 에서 읽고,
+# 그것도 없으면 claude 를 기본값으로 사용한다.
+# config.toml 의 agent 설정은 --agent 플래그로 항상 override 한다.
+if [ -z "${AGENT:-}" ] && [ -f "$PROJECT_DIR/.env" ]; then
+    set -a
+    # shellcheck disable=SC1090
+    source "$PROJECT_DIR/.env"
+    set +a
+fi
+AGENT="${AGENT:-claude}"
+case "$AGENT" in
+    claude|codex|gemini) ;;
+    *)
+        echo "❌ 지원하지 않는 AGENT 값: '$AGENT' (claude|codex|gemini)" >&2
+        exit 1
+        ;;
+esac
+
 MAX_RESTARTS=10
 CONSECUTIVE_FAIL_LIMIT=3
 COOLDOWN_SECONDS=360
@@ -107,6 +126,7 @@ get_latest_session_id() {
 
 log "=== Sentinel 시작 ==="
 log "프로젝트: $PROJECT_DIR"
+log "에이전트: $AGENT"
 log "최대 재시작: $MAX_RESTARTS"
 log "Rate limit 폴백 리셋 시간: 오전 ${FALLBACK_RESET_HOUR}시"
 
@@ -118,11 +138,11 @@ while true; do
 
     cd "$PROJECT_DIR"
     if [ "$restart_count" -eq 0 ] && [ -z "$session_id" ]; then
-        # 첫 실행
-        "$RALPH_BIN" run --no-tui --prd "$PRD_FILE" 2>&1 | tee -a "$RALPH_LOG"
+        # 첫 실행 — --agent 로 config.toml 의 agent 설정을 명시적으로 override
+        "$RALPH_BIN" run --no-tui --agent "$AGENT" --prd "$PRD_FILE" 2>&1 | tee -a "$RALPH_LOG"
         EXIT_CODE=${PIPESTATUS[0]}
     else
-        # 재시작 — resume
+        # 재시작 — resume (세션에 저장된 agent 가 이어짐)
         if [ -n "$session_id" ]; then
             "$RALPH_BIN" resume "$session_id" 2>&1 | tee -a "$RALPH_LOG"
         else
