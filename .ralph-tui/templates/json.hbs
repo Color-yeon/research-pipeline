@@ -66,7 +66,9 @@
 
 ```
 1단계: browser_navigate
-  url = "https://oca.korea.ac.kr/link.n2s?url=<논문URL>"
+  url = "${PROXY_BASE_URL}<논문URL>"
+  (PROXY_BASE_URL은 .env의 프록시 베이스 값 — 기관마다 다름. 예: https://<프록시호스트>/?url=)
+  (PROXY_ENABLED=false인 경우 프록시 없이 논문URL로 직접 접근)
   (토큰 초과 에러는 무시 — 페이지 로딩만 되면 됨)
 
 2단계: browser_run_code

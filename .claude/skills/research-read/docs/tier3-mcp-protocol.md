@@ -26,9 +26,15 @@ findings/_fetch_results.json의 needsTier3 배열을 읽는다.
 
 ### 2. EZproxy URL 구성
 
+사용자가 `.env`에 설정한 `PROXY_BASE_URL`을 사용한다.
+프록시 URL은 해당 베이스에 원본 논문 URL(또는 DOI URL)을 그대로 이어 붙인 값이다.
+
 ```
-프록시 URL: https://oca.korea.ac.kr/link.n2s?url=https://doi.org/{doi}
+프록시 URL = ${PROXY_BASE_URL}https://doi.org/{doi}
 ```
+
+`.env`에서 `PROXY_BASE_URL`을 직접 읽어 쓰거나, 이미 `scripts/read-paper.js`의 `PROXY_BASE` export를 참조하는 것이 안전하다.
+`PROXY_ENABLED=false`이면 프록시 URL 구성을 건너뛰고 원본 URL로 바로 접근한다.
 
 ### 3. 페이지 접근
 
@@ -121,10 +127,12 @@ browser_navigate → about:blank
 
 페이지가 로그인 페이지인 경우:
 1. `browser_snapshot`으로 로그인 폼 확인
-2. `browser_type`으로 ID/PW 입력 (.env의 KOREA_PORTAL_ID/PW)
+2. `browser_type`으로 ID/PW 입력 (.env의 `PROXY_PORTAL_ID` / `PROXY_PORTAL_PW`)
 3. `browser_click`으로 로그인 버튼 클릭
 4. 5초 대기 후 `browser_snapshot`으로 결과 확인
 5. 성공 시 원래 프록시 URL로 재이동
+
+학교마다 로그인 폼 셀렉터가 다를 수 있다. `.env`의 `PROXY_LOGIN_ID_SELECTOR` / `PROXY_LOGIN_PW_SELECTOR` / `PROXY_LOGIN_SUBMIT_SELECTOR` / `PROXY_LOGIN_PRECLICK_SELECTOR`가 설정되어 있으면 해당 값을 우선 사용한다.
 
 ## 주의사항
 

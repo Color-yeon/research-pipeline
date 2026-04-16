@@ -69,7 +69,8 @@ echo "대상: $COUNT편"
 
 ```
 🤖 티어 3: Playwright MCP 직접 브라우징 시작
-  EZproxy URL: https://oca.korea.ac.kr/link.n2s?url=https://doi.org/10.1021/acs.jcim.7b00048
+  EZproxy URL: ${PROXY_BASE_URL}https://doi.org/10.1021/acs.jcim.7b00048
+  (PROXY_BASE_URL은 .env 값 — 기관마다 다름. 예: https://<프록시호스트>/?url=)
 ```
 
 1. `browser_navigate`로 EZproxy URL 접근
