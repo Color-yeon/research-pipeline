@@ -1,4 +1,52 @@
 {
+  "hooks": {
+    "PreCompact": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node scripts/hooks/pre-compact-checkpoint.mjs",
+            "timeout": 10000
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node scripts/hooks/verify-fix-loop.mjs",
+            "timeout": 10000
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node scripts/hooks/pipeline-guard.mjs",
+            "timeout": 5000
+          }
+        ]
+      },
+      {
+        "matcher": "WebSearch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node scripts/hooks/search-wisdom-pretool.mjs",
+            "timeout": 3000
+          }
+        ]
+      }
+    ]
+  },
   "mcpServers": {
     "chrome-mcp": {
       "command": "/Users/goomba/.npm/_npx/a04ef7d095ce0ff7/node_modules/.bin/chrome-mcp",
