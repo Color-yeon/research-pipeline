@@ -111,8 +111,11 @@
 ### 1. 전제 조건
 
 - **Node.js** (scripts 실행용)
-- **Claude Code** CLI (`claude`)
-- **Ralph TUI** (`~/.bun/bin/ralph-tui`)
+- **연구 에이전트 CLI** — 아래 셋 중 최소 하나 (실행 시 전환 가능)
+  - **Claude Code** (`claude`) — 가장 검증된 경로이자 기본값
+  - **OpenAI Codex CLI** (`codex`) — Agent Skills 표준으로 자동 호환
+  - **Google Gemini CLI** (`gemini-cli`) — TOML 래퍼 경유로 지원
+- **Ralph TUI** (`~/.bun/bin/ralph-tui`) — 위 어떤 에이전트와도 함께 동작
 - **Playwright** (`npm install`로 설치됨)
 - (선택) 본인 학교/기관의 EZproxy 계정 — 유료 저널 전문 접근용. 처음 실행 시 `./start-research.sh`가 대화형으로 프록시 URL과 자격 증명을 입력받아 `.env`에 저장합니다. 없으면 오픈액세스 논문만 시도합니다.
 - **Notion MCP 연결** — 결과를 노션에 기록하려면 Notion MCP 서버가 활성화되어 있어야 합니다.
@@ -152,6 +155,10 @@ cp .env.example .env
 
 # 중단된 세션 이어서 실행
 ./start-research.sh resume
+
+# 에이전트 전환 (기본값은 .env의 AGENT, 없으면 claude)
+./start-research.sh deep --agent codex
+./start-research.sh deep --agent gemini
 ```
 
 장시간 실행되므로 `tmux` 안에서 돌리는 것을 권장합니다:
@@ -175,8 +182,11 @@ tmux new -s research
 ### 1. Prerequisites
 
 - **Node.js** (for scripts)
-- **Claude Code** CLI (`claude`)
-- **Ralph TUI** (`~/.bun/bin/ralph-tui`)
+- **A research-agent CLI** — at least one of the following (switchable at run time)
+  - **Claude Code** (`claude`) — the most battle-tested path and the default
+  - **OpenAI Codex CLI** (`codex`) — natively compatible via the Agent Skills standard
+  - **Google Gemini CLI** (`gemini-cli`) — supported through an auto-generated TOML wrapper
+- **Ralph TUI** (`~/.bun/bin/ralph-tui`) — works with any of the agents above
 - **Playwright** (installed via `npm install`)
 - (Optional) An EZproxy account from your own institution, for paywalled journal access. On first run, `./start-research.sh` will interactively ask for the proxy URL and credentials and save them to `.env`. Without it, the pipeline only tries open-access papers.
 - **Notion MCP connection** — required only if you want to push results to Notion.
@@ -216,6 +226,10 @@ Proxy URL shapes vary by institution (`https://<proxy-host>/?url=`, `https://<li
 
 # Resume an interrupted session
 ./start-research.sh resume
+
+# Switch agent (defaults to AGENT in .env, or `claude` when unset)
+./start-research.sh deep --agent codex
+./start-research.sh deep --agent gemini
 ```
 
 Runs are long, so use `tmux`:
@@ -233,6 +247,107 @@ After completion you'll find:
 - Markdown reports under `findings/`
 - Extracted full texts under `findings/raw_texts/`
 - An auto-generated Notion database and per-paper pages in your workspace
+
+---
+
+## 🇰🇷 에이전트 선택 (Claude / Codex / Gemini)
+
+이 파이프라인은 Anthropic의 **Agent Skills 공개 표준**을 채택해 세 가지 에이전트
+CLI에서 동일한 슬래시 명령(`/research-*`)을 수행할 수 있습니다.
+
+### 정본과 파생물
+
+스킬 정본은 `.claude/skills/` 하나뿐이며, `npm install` 또는
+`npm run sync-agents` 실행 시 `scripts/sync-agent-assets.mjs` 가 나머지 에이전트용
+파생물을 자동 생성합니다.
+
+```
+.claude/skills/<name>/SKILL.md       ← 정본 (사람이 편집, Git 커밋)
+  ↓ sync
+.codex/skills/<name>/                ← Codex CLI 전용 (자동 생성, .gitignore)
+.gemini/commands/<name>.toml         ← Gemini CLI 래퍼 (자동 생성, .gitignore)
+```
+
+파생물은 **직접 편집하지 마세요** — 다음 sync 때 덮어쓰여집니다. 스킬을 수정하려면
+언제나 `.claude/skills/` 의 원본을 편집한 뒤 `npm run sync-agents` 를 재실행하세요.
+
+### 전환 방법
+
+| 수단 | 예시 | 우선순위 |
+|------|------|---------|
+| 일회성 플래그 | `./start-research.sh deep --agent codex` | 1순위 |
+| `.env` 의 `AGENT` 변수 | `AGENT=gemini` | 2순위 |
+| 지정 없음 | — | 기본값 `claude` |
+
+### 에이전트별 설치
+
+| 에이전트 | 설치 명령 |
+|---------|----------|
+| Claude Code | 공식 안내: https://claude.com/claude-code |
+| OpenAI Codex CLI | `npm i -g @openai/codex` (또는 공식 안내의 최신 설치법) |
+| Google Gemini CLI | `npm i -g @google/gemini-cli` (명령어 `gemini-cli`) |
+
+세 에이전트 모두 각자의 로그인/API 키 절차를 먼저 완료해야 합니다 — 본 파이프라인은
+로그인 자체를 대행하지 않습니다.
+
+### 호환성 노트
+
+- Claude Code 는 `CLAUDE.md` 를, Codex·Gemini 는 `AGENTS.md` 를 자동으로 읽습니다.
+  두 파일은 같은 원칙을 담고 있으며 `AGENTS.md` 가 세 에이전트 공용 본문입니다.
+- Ralph TUI 는 `run-agent.sh` 래퍼와 `--agent` 플래그를 통해 어떤 에이전트도
+  오케스트레이션할 수 있습니다 (`ralph-tui plugins agents` 참고).
+- 진행 중인 Ralph 세션은 resume 시 **해당 세션이 시작된 에이전트**를 그대로
+  이어받습니다 (중간 전환은 지원하지 않음).
+
+## 🇺🇸 Agent selection (Claude / Codex / Gemini)
+
+This pipeline adopts Anthropic's **open Agent Skills standard**, so the same
+`/research-*` slash commands work across three agent CLIs.
+
+### Source of truth vs. derivatives
+
+The only skill source of truth is `.claude/skills/`. Running `npm install` or
+`npm run sync-agents` invokes `scripts/sync-agent-assets.mjs`, which generates
+derivatives for the other agents:
+
+```
+.claude/skills/<name>/SKILL.md       ← source of truth (editable, committed)
+  ↓ sync
+.codex/skills/<name>/                ← Codex CLI copies (auto-generated, gitignored)
+.gemini/commands/<name>.toml         ← Gemini CLI wrappers (auto-generated, gitignored)
+```
+
+**Never edit derivatives** — they are overwritten on the next sync. To modify a
+skill, always edit the source under `.claude/skills/` and re-run
+`npm run sync-agents`.
+
+### How to switch
+
+| Mechanism | Example | Priority |
+|-----------|---------|----------|
+| One-shot flag | `./start-research.sh deep --agent codex` | 1st |
+| `AGENT` in `.env` | `AGENT=gemini` | 2nd |
+| Nothing set | — | defaults to `claude` |
+
+### Install each agent
+
+| Agent | Install |
+|-------|---------|
+| Claude Code | Official docs: https://claude.com/claude-code |
+| OpenAI Codex CLI | `npm i -g @openai/codex` (or whatever the official docs recommend) |
+| Google Gemini CLI | `npm i -g @google/gemini-cli` (binary name `gemini-cli`) |
+
+You still need to complete each agent's own login / API-key flow — the pipeline
+does not proxy authentication.
+
+### Compatibility notes
+
+- Claude Code auto-reads `CLAUDE.md`; Codex and Gemini auto-read `AGENTS.md`.
+  Both files share the same core rules; `AGENTS.md` is the cross-agent source.
+- Ralph TUI can orchestrate any of the three via the `run-agent.sh` wrapper and
+  `--agent` flag (see `ralph-tui plugins agents`).
+- When resuming a Ralph session, the **agent the session was started with** is
+  preserved (mid-session switching is not supported).
 
 ---
 
@@ -446,7 +561,12 @@ Running `/research-notion` produces the following inside Notion.
 
 ## 🇰🇷 자동화 훅 (품질 보장 메커니즘)
 
-`.claude/settings.json`에 등록된 4개 훅이 Claude의 실수를 자동 교정합니다.
+Claude Code 경로에서는 `.claude/settings.json`에 등록된 4개 훅이 실수를 자동 교정합니다.
+Codex·Gemini 경로에서는 Claude 고유의 이벤트 훅이 동작하지 않으므로, 같은 보장을
+**스킬 본문의 "0단계"·"종료 단계"** 가 CLI 호출로 수행합니다
+(`scripts/lib/pipeline-guard.mjs`, `scripts/lib/coverage-verifier.mjs`,
+`scripts/lib/checkpoint.mjs`). 결과적으로 어떤 에이전트로 돌려도 동일한 품질 게이트가
+적용됩니다.
 
 ### 1. Pre-Compact 체크포인트 (`PreCompact`)
 컨텍스트 압축 직전에 연구 진행 상황을 `findings/_checkpoint.json`에 저장합니다. Ralph TUI가 fresh 세션을 띄워도 체크포인트를 읽어 연속성을 확보합니다.
@@ -467,7 +587,12 @@ WebSearch 호출 때마다 쿼리·소스·결과 수·학술 비율을 `_search
 
 ## 🇺🇸 Automation hooks (quality enforcement)
 
-Four hooks registered in `.claude/settings.json` auto-correct Claude's mistakes.
+On the Claude Code path, four hooks registered in `.claude/settings.json`
+auto-correct mistakes. On the Codex / Gemini paths, those event hooks do not
+fire — so the same guarantees are implemented as CLI calls inside each skill's
+"Step 0" and "Final step" (`scripts/lib/pipeline-guard.mjs`,
+`scripts/lib/coverage-verifier.mjs`, `scripts/lib/checkpoint.mjs`). The net
+result is the same quality gate regardless of which agent runs the pipeline.
 
 ### 1. Pre-Compact checkpoint (`PreCompact`)
 Right before context compaction, snapshots current research state into `findings/_checkpoint.json`. Even a fresh Ralph TUI session can read it back to preserve continuity.
