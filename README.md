@@ -709,7 +709,7 @@ Running `/research-notion` produces the following inside Notion.
 
 ## 🇰🇷 자동화 훅 (품질 보장 메커니즘)
 
-Claude Code 경로에서는 `.claude/settings.json`에 등록된 4개 훅이 실수를 자동 교정합니다.
+Claude Code 경로에서는 `.claude/settings.json`에 등록된 3개 이벤트(PreCompact, Stop, PreToolUse)에 걸린 훅 4종이 실수를 자동 교정합니다.
 Codex·Gemini 경로에서는 Claude 고유의 이벤트 훅이 동작하지 않으므로, 같은 보장을
 **스킬 본문의 "0단계"·"종료 단계"** 가 CLI 호출로 수행합니다
 (`scripts/lib/pipeline-guard.mjs`, `scripts/lib/coverage-verifier.mjs`,
@@ -730,12 +730,12 @@ Codex·Gemini 경로에서는 Claude 고유의 이벤트 훅이 동작하지 않
 ### 3. State Machine 파이프라인 가드 (`PreToolUse`)
 스킬 실행 전 선행 조건을 검사합니다. 예: `/research-validate`는 `integrated_analysis.md`가 없으면 실행이 차단됩니다. 파이프라인 순서 위반을 프로그래밍적으로 막습니다.
 
-### 4. 검색 지혜 자동 학습 (실험적 — 현재 비활성)
-설계 의도는 `PostToolUse` 훅으로 `WebSearch` 결과를 `_search_wisdom.json`에 쌓아 이후 검색에 참조하는 것이었습니다. 다만 **현 Claude Code 훅 사양은 `tool_output`을 훅에 전달하지 않아** 효과 측정이 불가능하여, 지금은 `.claude/settings.json`에서 등록을 제외한 상태입니다. 관련 스크립트(`scripts/hooks/search-wisdom-learner.mjs`)는 참고용으로만 남겨 두고, 훅 사양이 변경되면 재등록 예정입니다.
+### 4. 검색 지혜 사전 점검 (`PreToolUse`, matcher: `WebSearch`)
+WebSearch 호출 직전에 동일 쿼리 반복 여부를 점검하고 누적 기록을 갱신합니다. 쿼리·소스·반복 횟수를 `findings/_search_wisdom.json`에 기록하고, 동일 쿼리가 3회 이상이면 stderr로 경고합니다(차단은 하지 않음). 10건 이상 기록이 쌓이면 `findings/_search_wisdom.md` 분석 리포트가 자동 생성됩니다. 효과 측정(결과 수)은 PostToolUse 훅이 `tool_output`을 전달하지 않는 현 사양상 불가능하여 제외되었습니다.
 
 ## 🇺🇸 Automation hooks (quality enforcement)
 
-On the Claude Code path, four hooks registered in `.claude/settings.json`
+On the Claude Code path, four hooks registered in `.claude/settings.json` (across three events: PreCompact, Stop, PreToolUse)
 auto-correct mistakes. On the Codex / Gemini paths, those event hooks do not
 fire — so the same guarantees are implemented as CLI calls inside each skill's
 "Step 0" and "Final step" (`scripts/lib/pipeline-guard.mjs`,
@@ -756,8 +756,8 @@ On failure, Stop is **blocked** and specific gaps are sent back as a message to 
 ### 3. State-machine pipeline guard (`PreToolUse`)
 Checks preconditions before a skill runs. e.g. `/research-validate` is blocked unless `integrated_analysis.md` exists — pipeline-order violations are prevented programmatically.
 
-### 4. Search-wisdom auto-learning (experimental — currently disabled)
-The intent was a `PostToolUse` hook that accumulates `WebSearch` outcomes into `_search_wisdom.json` for future reference. However the **current Claude Code hook spec does not pass `tool_output` to hooks**, so effect measurement is not possible and the hook is **not registered in `.claude/settings.json`** at the moment. The script (`scripts/hooks/search-wisdom-learner.mjs`) is kept for reference and will be re-enabled if the hook spec changes.
+### 4. Search-wisdom pre-check (`PreToolUse`, matcher: `WebSearch`)
+Just before a `WebSearch` call, this hook checks for duplicate queries and updates an accumulated record. Query, source (OpenAlex / Semantic Scholar / arXiv etc.), and repeat count are written to `findings/_search_wisdom.json`. If the same query is repeated 3+ times it warns to stderr (never blocks). Once 10+ records accumulate, an analysis report `findings/_search_wisdom.md` is regenerated. Effect measurement (result counts) is intentionally omitted because the current Claude Code hook spec does not pass `tool_output` to hooks.
 
 ---
 

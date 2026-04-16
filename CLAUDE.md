@@ -41,7 +41,7 @@ Claude Code가 연구 에이전트로 동작하며, 아래 원칙을 **반드시
 
 ## 자동화 훅 (OMC 패턴)
 
-`.claude/settings.json`에 등록된 4개 훅이 파이프라인 품질을 자동으로 보장한다.
+`.claude/settings.json`에 등록된 3개 이벤트(PreCompact, Stop, PreToolUse)에 걸린 훅 4종이 파이프라인 품질을 자동으로 보장한다. PreToolUse에는 모든 도구 대상의 `pipeline-guard`와 WebSearch 전용 `search-wisdom-pretool` 두 개가 등록되어 있다.
 
 ### 1. Pre-Compact 체크포인트 (`PreCompact`)
 컨텍스트 압축 직전에 연구 진행 상황을 `findings/_checkpoint.json`에 자동 저장한다.
@@ -62,11 +62,12 @@ Claude Code가 연구 에이전트로 동작하며, 아래 원칙을 **반드시
 - 예: `/research-validate` 실행 시 `integrated_analysis.md` 없으면 차단
 - 파이프라인 순서 위반을 프로그래밍적으로 방지
 
-### 4. 검색 지혜 자동 학습 (`PostToolUse`)
-WebSearch 호출 후 검색 패턴을 자동 축적하여 검색 전략을 개선한다.
-- 쿼리, 소스, 결과 수, 학술 비율을 `findings/_search_wisdom.json`에 기록
+### 4. 검색 지혜 사전 점검 (`PreToolUse`, matcher: `WebSearch`)
+WebSearch 호출 직전에 동일 쿼리 반복 여부를 점검하고 누적 기록을 갱신한다.
+- 쿼리, 소스(OpenAlex/Semantic Scholar/arXiv 등), 반복 횟수를 `findings/_search_wisdom.json`에 기록
+- 동일 쿼리 3회 이상이면 stderr로 경고 (차단은 하지 않음)
 - 10개 이상 기록 축적 시 `findings/_search_wisdom.md` 마크다운 리포트 자동 생성
-- 효과적/비효과적 패턴을 분석하여 다음 검색에 참조
+- 효과 측정(결과 수)은 PostToolUse 훅이 `tool_output`을 전달하지 않는 현 사양상 불가능하여, 쿼리 패턴/소스 분포만 학습한다.
 
 ## 모드별 규칙
 

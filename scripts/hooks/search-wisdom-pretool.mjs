@@ -3,13 +3,12 @@
 /**
  * 검색 지혜 PreToolUse 훅
  *
- * 구 search-wisdom-learner.mjs(PostToolUse)는 Claude Code 훅 사양상 tool_output을 받지 못해
- * 442/442 검색 모두 효과 측정 불가였다. 이 훅은 PreToolUse로 옮겨서 두 가지 역할을 수행한다.
- *
- *   역할 1 (사전 경고): WebSearch 호출 직전에 동일 쿼리 이력을 체크하고 stderr로 경고
- *   역할 2 (누적 기록): 쿼리 자체는 계속 누적 저장 (반복 횟수 트래킹)
+ * WebSearch 호출 직전에 두 가지 역할을 수행한다:
+ *   역할 1 (사전 경고): 동일 쿼리 이력을 체크하고 N회 이상 반복 시 stderr로 경고
+ *   역할 2 (누적 기록): 쿼리/소스/반복횟수를 _search_wisdom.json 에 누적 저장
  *
  * 차단(decision: block)은 하지 않는다 — 단순 정보 제공만.
+ * PostToolUse 훅이 tool_output 을 전달하지 않는 사양상, 효과 측정(결과 수)은 수집하지 않는다.
  *
  * 훅 이벤트: PreToolUse, matcher: "WebSearch"
  */
