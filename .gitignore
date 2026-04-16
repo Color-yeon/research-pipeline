@@ -8,6 +8,13 @@
 
 # 환경변수 (민감 정보)
 .env
+.env.local
+.env.*.local
+
+# Claude Code 로컬 설정 — 사용자별 allow 목록 등 로컬 튜닝이 들어가는 파일.
+# 프로젝트 공통 설정은 .claude/settings.json 으로 유지하고, 사용자별 확장은
+# settings.local.json 에 두고 커밋하지 않는다.
+.claude/settings.local.json
 
 # Node
 node_modules/

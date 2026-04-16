@@ -71,19 +71,8 @@ async function resolveDoi(doiUrl) {
   });
 }
 
-// .env 파일에서 환경변수 로드
-function loadEnv() {
-  const envPath = path.join(PROJECT_DIR, '.env');
-  if (!fs.existsSync(envPath)) return;
-  for (const line of fs.readFileSync(envPath, 'utf-8').split('\n')) {
-    const t = line.trim();
-    if (!t || t.startsWith('#')) continue;
-    const eq = t.indexOf('=');
-    if (eq === -1) continue;
-    if (!process.env[t.substring(0, eq).trim()]) process.env[t.substring(0, eq).trim()] = t.substring(eq + 1).trim();
-  }
-}
-loadEnv();
+// .env 파일에서 환경변수 로드 — 공용 로더로 통일
+require('./lib/env-loader').loadEnv();
 
 // loadEnv() 후에 PROXY_BASE를 결정한다. 빈 문자열이면 모든 접근이 직접(프록시 미경유)으로 동작한다.
 const PROXY_BASE = resolveProxyBase();

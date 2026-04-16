@@ -112,6 +112,36 @@ If you juggle several topics, the **project library** (`library` / `restore`) au
 
 ---
 
+## 🇰🇷 실행 전 꼭 읽어 주세요 (안전 고지)
+
+이 파이프라인은 **로컬 자동화 도구**이지 SaaS 가 아닙니다. 아래 사항을 이해하신 상태에서 실행해 주세요.
+
+1. **에이전트가 확인 없이 로컬 명령을 실행합니다.**
+   `scripts/run-agent.sh`는 Claude Code를 `--dangerously-skip-permissions`, Codex를 `exec --full-auto`로 기동합니다. Ralph TUI가 각 태스크마다 새 세션을 띄우며, 에이전트는 `Bash` / `Write` / `Edit` / `WebFetch` 등을 허용 프롬프트 없이 실행합니다. **공용 PC, 프로덕션 계정, 민감 레포가 있는 홈 디렉토리**에서는 실행하지 마세요. 별도 계정 또는 전용 작업 디렉토리를 권장합니다. 권한 우회 없이 돌리고 싶다면 `CLAUDE_SAFE_MODE=1 ./start-research.sh ...` 로 기동하면 `.claude/settings.json` 의 `permissions.allow`/`deny` 가 적용됩니다(파이프라인 내부 스크립트만 허용, `sudo`/`curl`/`rm -rf /` 등 차단).
+2. **웹/논문 콘텐츠가 컨텍스트에 그대로 주입됩니다.** 검색 결과·논문 본문에 숨겨진 프롬프트 인젝션이 있으면 에이전트가 그 지시대로 움직일 수 있습니다. 파이프라인 내부 가드(`pipeline-guard.mjs`, `coverage-verifier.mjs`)와 본 저장소 코드가 모든 인젝션을 막아 주진 못합니다.
+3. **자격 증명은 로컬 파일에만 저장됩니다.**
+   `.env`(포털 ID/PW, API 키)와 `.playwright-auth.json`(로그인 세션 쿠키)은 자동으로 `chmod 600`이 적용되지만, 백업 도구(Time Machine, iCloud 등)나 다른 사용자가 접근 가능한 공유 경로에는 두지 마세요. 공용 머신에서는 세션 종료 후 `rm -rf .playwright-profile .playwright-auth.json`으로 정리하세요.
+4. **유료 저널 접근은 본인 구독 범위 안에서만 사용해 주세요.**
+   스크립트에는 브라우저 호환성 유지를 위한 자동화 감지 회피 옵션(`navigator.webdriver` 마스킹, `--disable-blink-features=AutomationControlled` 등)이 포함됩니다. 이는 본인 기관이 구독한 자료의 접근을 위한 것이며, **출판사의 TDM(Text and Data Mining) 정책과 이용약관을 준수**하는 책임은 사용자에게 있습니다. 위반 시 IP 차단·계정 정지·법적 책임이 발생할 수 있습니다.
+5. **토큰·API 호출 비용은 사용자가 부담합니다.** Tier 3 재시도는 한 편당 `~50K` 토큰, 검색 단계의 외부 API는 rate-limit을 빠르게 소진할 수 있습니다.
+6. 상세한 보안 정책과 제보 경로는 [SECURITY.md](SECURITY.md)를 참고하세요.
+
+## 🇺🇸 Before you run (safety notice)
+
+This pipeline is a **local automation tool**, not a SaaS. Please make sure you understand the following before running it.
+
+1. **The agent executes local commands without per-action confirmation.**
+   `scripts/run-agent.sh` launches Claude Code with `--dangerously-skip-permissions` and Codex with `exec --full-auto`. Ralph TUI spins up a fresh session per task, and the agent is free to run `Bash` / `Write` / `Edit` / `WebFetch` with no allow-prompts. **Do not run this on a shared PC, a production account, or a home directory containing sensitive repos.** Prefer a dedicated user account or working directory. To run without permission bypass, use `CLAUDE_SAFE_MODE=1 ./start-research.sh ...` — the `permissions.allow`/`deny` list in `.claude/settings.json` will be enforced (only internal pipeline scripts allowed; `sudo`/`curl`/`rm -rf /` etc. are denied).
+2. **Web and paper content is injected directly into the agent context.** Hidden prompt-injection inside a search result or paper body can cause the agent to follow those instructions. The in-pipeline guards (`pipeline-guard.mjs`, `coverage-verifier.mjs`) and this repo's code do not defend against every possible injection.
+3. **Credentials live only in local files.**
+   `.env` (portal ID/PW, API keys) and `.playwright-auth.json` (session cookies) are automatically set to `chmod 600`, but do not place them under backup tools (Time Machine, iCloud, etc.) or shared paths reachable by other users. On shared machines, clean up after use: `rm -rf .playwright-profile .playwright-auth.json`.
+4. **Use paywalled access only within your own subscription.**
+   The scripts include automation-detection evasion options (`navigator.webdriver` masking, `--disable-blink-features=AutomationControlled`, etc.) to preserve browser compatibility for legitimate subscription access. **Complying with each publisher's TDM (Text and Data Mining) policy and Terms of Service is your responsibility.** Violations may result in IP bans, account suspension, or legal liability.
+5. **Token and API costs are on you.** Tier 3 retries cost `~50K` tokens per paper and the search step can consume external API rate limits quickly.
+6. See [SECURITY.md](SECURITY.md) for the full security policy and reporting channel.
+
+---
+
 ## 🇰🇷 빠른 시작
 
 ### 1. 전제 조건
@@ -700,8 +730,8 @@ Codex·Gemini 경로에서는 Claude 고유의 이벤트 훅이 동작하지 않
 ### 3. State Machine 파이프라인 가드 (`PreToolUse`)
 스킬 실행 전 선행 조건을 검사합니다. 예: `/research-validate`는 `integrated_analysis.md`가 없으면 실행이 차단됩니다. 파이프라인 순서 위반을 프로그래밍적으로 막습니다.
 
-### 4. 검색 지혜 자동 학습 (`PostToolUse`)
-WebSearch 호출 때마다 쿼리·소스·결과 수·학술 비율을 `_search_wisdom.json`에 기록합니다. 10회 이상 축적되면 마크다운 리포트가 자동 생성되어 이후 검색에 참조됩니다.
+### 4. 검색 지혜 자동 학습 (실험적 — 현재 비활성)
+설계 의도는 `PostToolUse` 훅으로 `WebSearch` 결과를 `_search_wisdom.json`에 쌓아 이후 검색에 참조하는 것이었습니다. 다만 **현 Claude Code 훅 사양은 `tool_output`을 훅에 전달하지 않아** 효과 측정이 불가능하여, 지금은 `.claude/settings.json`에서 등록을 제외한 상태입니다. 관련 스크립트(`scripts/hooks/search-wisdom-learner.mjs`)는 참고용으로만 남겨 두고, 훅 사양이 변경되면 재등록 예정입니다.
 
 ## 🇺🇸 Automation hooks (quality enforcement)
 
@@ -726,8 +756,8 @@ On failure, Stop is **blocked** and specific gaps are sent back as a message to 
 ### 3. State-machine pipeline guard (`PreToolUse`)
 Checks preconditions before a skill runs. e.g. `/research-validate` is blocked unless `integrated_analysis.md` exists — pipeline-order violations are prevented programmatically.
 
-### 4. Search-wisdom auto-learning (`PostToolUse`)
-Every `WebSearch` call logs query / source / result count / academic ratio into `_search_wisdom.json`. After 10 entries the hook auto-generates a markdown report that future searches consult.
+### 4. Search-wisdom auto-learning (experimental — currently disabled)
+The intent was a `PostToolUse` hook that accumulates `WebSearch` outcomes into `_search_wisdom.json` for future reference. However the **current Claude Code hook spec does not pass `tool_output` to hooks**, so effect measurement is not possible and the hook is **not registered in `.claude/settings.json`** at the moment. The script (`scripts/hooks/search-wisdom-learner.mjs`) is kept for reference and will be re-enabled if the hook spec changes.
 
 ---
 
