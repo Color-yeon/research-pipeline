@@ -2,16 +2,20 @@
 # 연구 자동화 파이프라인 — 진입점
 #
 # 사용법:
-#   ./start-research.sh <mode> [--agent <claude|codex|gemini>]
+#   ./start-research.sh <mode> [--agent <claude|codex|gemini>] [--name <slug>]
 #
 # 모드:
-#   deep    — 심층 참고문헌 조사 (처음부터)
-#   trend   — 동향 탐구 (처음부터)
-#   run     — 기존 prd.json으로 바로 실행
-#   resume  — 중단된 세션 재개
+#   deep            — 심층 참고문헌 조사 (처음부터)
+#   trend           — 동향 탐구 (처음부터)
+#   run             — 기존 prd.json으로 바로 실행
+#   resume          — 중단된 세션 재개
+#   library         — 아카이브된 프로젝트 목록 보기
+#   restore <slug>  — 아카이브된 프로젝트를 루트로 복원 (현재 상태는 자동 보존)
 #
 # --agent 옵션을 주면 .env 의 AGENT 값을 이 실행에서만 덮어쓴다.
 # 옵션이 없으면 .env 의 AGENT (기본 claude)를 사용한다.
+# --name 옵션은 deep/trend 에서 기존 프로젝트를 자동 아카이브할 때
+# 자동 생성될 slug 를 원하는 이름으로 덮어쓴다.
 #
 # tmux에서 실행 권장:
 #   tmux new -s research
@@ -25,9 +29,11 @@ CONFIG_FILE="$PROJECT_DIR/research-config.json"
 PRD_FILE="$PROJECT_DIR/prd.json"
 RALPH_BIN="$HOME/.bun/bin/ralph-tui"
 
-# ── 인자 파싱 (모드 + --agent) ─────────────────────────────────────
+# ── 인자 파싱 (모드 + --agent + --name) ────────────────────────────
 MODE=""
 AGENT_OVERRIDE=""
+NAME_FLAG=""
+RESTORE_SLUG=""
 
 show_usage() {
     cat <<'USAGE'
@@ -36,29 +42,45 @@ show_usage() {
 ==========================================
 
 사용법:
-  ./start-research.sh <mode> [--agent <name>]
+  ./start-research.sh <mode> [--agent <name>] [--name <slug>]
 
 모드:
-  deep    — 연구 주제의 키워드 조합 완전탐색 + 실험 설계 지원
-  trend   — 리뷰 논문 기반 동향 파악 + 최신 트렌드
-  run     — research-config.json + prd.json이 이미 있을 때 바로 실행
-  resume  — 중단된 세션을 이어서 실행
+  deep            — 키워드 조합 완전탐색 + 실험 설계 지원 (처음부터)
+  trend           — 리뷰 논문 기반 동향 파악 + 최신 트렌드 (처음부터)
+  run             — research-config.json + prd.json 이 이미 있을 때 바로 실행
+  resume          — 중단된 세션을 이어서 실행
+  library         — 아카이브된 프로젝트 목록 보기
+  restore <slug>  — 아카이브된 프로젝트를 루트로 복원 (현재 상태는 자동 보존)
 
 옵션:
   --agent <name>   claude | codex | gemini (.env의 AGENT를 1회용 덮어쓰기)
+  --name <slug>    deep/trend 에서 새 주제를 시작할 때, 기존 프로젝트를
+                   자동 아카이브할 슬러그를 지정 (없으면 첫 키워드에서 자동 생성)
 
 예시:
   ./start-research.sh deep
   ./start-research.sh deep --agent codex
+  ./start-research.sh deep --name 4d-qsar-pampa-v1   # 기존 작업을 이 이름으로 보존
+  ./start-research.sh library
+  ./start-research.sh restore 4d-qsar-pampa-v1-20260416-185530
   AGENT=gemini ./start-research.sh run
 USAGE
 }
 
 while [ $# -gt 0 ]; do
     case "$1" in
-        deep|trend|run|resume)
+        deep|trend|run|resume|library)
             MODE="$1"
             shift
+            ;;
+        restore)
+            MODE="restore"
+            shift
+            # restore 다음에 slug 가 오는 것이 정상 사용법. 다음 토큰이 옵션이면 비워둠(아래에서 에러 처리).
+            if [ $# -gt 0 ] && [[ "$1" != --* ]]; then
+                RESTORE_SLUG="$1"
+                shift
+            fi
             ;;
         --agent)
             AGENT_OVERRIDE="${2:-}"
@@ -70,6 +92,18 @@ while [ $# -gt 0 ]; do
             ;;
         --agent=*)
             AGENT_OVERRIDE="${1#*=}"
+            shift
+            ;;
+        --name)
+            NAME_FLAG="${2:-}"
+            if [ -z "$NAME_FLAG" ]; then
+                echo "❌ --name 옵션에 값이 없습니다." >&2
+                exit 1
+            fi
+            shift 2
+            ;;
+        --name=*)
+            NAME_FLAG="${1#*=}"
             shift
             ;;
         -h|--help|help)
@@ -88,6 +122,24 @@ done
 if [ -z "$MODE" ]; then
     show_usage
     exit 1
+fi
+
+# ── library / restore: 파일 작업만 수행하고 즉시 종료 ─────────────
+# 프록시/인증/Ralph 블록을 거치지 않는다.
+if [ "$MODE" = "library" ]; then
+    node "$SCRIPTS_DIR/lib/project-archive.mjs" list
+    exit $?
+fi
+
+if [ "$MODE" = "restore" ]; then
+    if [ -z "$RESTORE_SLUG" ]; then
+        echo "❌ restore 모드는 복원할 slug 가 필요합니다." >&2
+        echo "   사용법: ./start-research.sh restore <slug>" >&2
+        echo "   목록:   ./start-research.sh library" >&2
+        exit 1
+    fi
+    node "$SCRIPTS_DIR/lib/project-archive.mjs" restore "$RESTORE_SLUG"
+    exit $?
 fi
 
 # ── 에이전트 설정 (--agent > .env AGENT > 기본 claude) ──────────────
@@ -190,6 +242,29 @@ if [ -f "$CONFIG_FILE" ]; then
     read -p "기존 설정을 사용할까요? (Y/n) " USE_EXISTING
     USE_EXISTING="${USE_EXISTING:-Y}"
     if [[ "$USE_EXISTING" =~ ^[Nn] ]]; then
+        echo "새로운 인테이크를 시작하기 전에 기존 프로젝트를 라이브러리로 보존합니다."
+        echo ""
+        # 자동 아카이브 — --name 이 주어졌으면 그 이름으로, 없으면 config.keywords[0] 기반 자동 슬러그
+        if [ -n "$NAME_FLAG" ]; then
+            if ! node "$SCRIPTS_DIR/lib/project-archive.mjs" archive --name "$NAME_FLAG" --reason "new-topic-start"; then
+                echo ""
+                read -p "⚠ 자동 아카이브 실패. 그래도 계속할까요? 기존 파일이 덮어쓰일 수 있습니다. (y/N) " FORCE_CONTINUE
+                if [[ ! "$FORCE_CONTINUE" =~ ^[Yy] ]]; then
+                    echo "중단했습니다."
+                    exit 1
+                fi
+            fi
+        else
+            if ! node "$SCRIPTS_DIR/lib/project-archive.mjs" archive --reason "new-topic-start"; then
+                echo ""
+                read -p "⚠ 자동 아카이브 실패. 그래도 계속할까요? 기존 파일이 덮어쓰일 수 있습니다. (y/N) " FORCE_CONTINUE
+                if [[ ! "$FORCE_CONTINUE" =~ ^[Yy] ]]; then
+                    echo "중단했습니다."
+                    exit 1
+                fi
+            fi
+        fi
+        echo ""
         echo "새로운 인테이크를 시작합니다."
     else
         echo "기존 설정을 사용합니다."

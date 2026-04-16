@@ -4,9 +4,13 @@
 >
 > 🇺🇸 An automated research literature review pipeline that, before you write your paper, collects every relevant background paper, extracts key insights, and analyzes the methodology you're planning to use.
 
-🇰🇷 이 파이프라인은 **Ralph TUI**가 오케스트레이션하고 **Claude Code**가 연구 에이전트로 동작합니다. 연구자가 다룰 주제만 정해주면, 관련 논문을 빠짐없이 검색·수집하고, 전문을 확보해 방법론·결과·한계를 분석한 뒤, 최종적으로 **노션(Notion) 데이터베이스**로 정리된 리포트까지 산출합니다.
+🇰🇷 이 파이프라인은 **Ralph TUI**가 오케스트레이션하고, **Claude Code / OpenAI Codex CLI / Google Gemini CLI** 중 원하는 에이전트가 연구 에이전트로 동작합니다. 세 에이전트 모두 Anthropic 의 공개 **Agent Skills 표준**을 따르므로 동일한 `/research-*` 슬래시 명령이 그대로 동작합니다. 연구자가 다룰 주제만 정해주면, 관련 논문을 빠짐없이 검색·수집하고, 전문을 확보해 방법론·결과·한계를 분석한 뒤, 최종적으로 **노션(Notion) 데이터베이스**로 정리된 리포트까지 산출합니다.
 
-🇺🇸 The pipeline is orchestrated by **Ralph TUI** with **Claude Code** acting as the research agent. You give it a topic; it finds and collects every relevant paper, retrieves the full text, analyzes methodology/results/limitations, and finally produces a structured report in a **Notion database**.
+여러 주제를 오가야 한다면 **프로젝트 라이브러리**(`library` / `restore`)가 기존 작업을 자동으로 `archive/` 에 보존하고 언제든 되돌려 줍니다 — 한 저장소 안에서 에이전트 비교 실험이나 주제 전환이 안전합니다.
+
+🇺🇸 The pipeline is orchestrated by **Ralph TUI** with your choice of **Claude Code / OpenAI Codex CLI / Google Gemini CLI** as the research agent. All three follow Anthropic's open **Agent Skills standard**, so the same `/research-*` slash commands work across them. You give it a topic; it finds and collects every relevant paper, retrieves the full text, analyzes methodology/results/limitations, and finally produces a structured report in a **Notion database**.
+
+If you juggle several topics, the **project library** (`library` / `restore`) auto-preserves prior work under `archive/` and brings it back on demand — safe to compare agents or pivot topics inside one repo.
 
 > 📖 이 README는 각 섹션마다 한국어 블록 바로 아래 영어 블록을 나란히 배치합니다. / Each section below shows Korean first, then English.
 
@@ -56,7 +60,8 @@
  ┌───────────────────────────────────────────────────┐
  │  Ralph TUI (sentinel.sh가 프로세스 감시·자동 재시작)  │
  │                                                   │
- │  각 태스크마다 fresh Claude 세션을 띄워 스킬 실행    │
+ │  각 태스크마다 fresh 에이전트 세션(claude/codex/     │
+ │  gemini)을 띄워 스킬 실행                          │
  │    • /research-search    (검색 + Tier 1/2 전문 수집) │
  │    • /research-read      (Tier 3 재시도)           │
  │    • /research-snowball  (참고문헌 추적)            │
@@ -68,7 +73,7 @@
             findings/ 디렉토리 + Notion DB
 ```
 
-- **Ralph TUI**는 태스크마다 새 Claude 세션을 띄우므로, 이전 작업 결과는 `findings/*.md` 파일과 `_checkpoint.json`으로만 전달됩니다.
+- **Ralph TUI**는 태스크마다 새 에이전트 세션을 띄우므로, 이전 작업 결과는 `findings/*.md` 파일과 `_checkpoint.json`으로만 전달됩니다.
 - 자동화 훅 4종이 `.claude/settings.json`에 등록되어 파이프라인 품질을 강제합니다(자세한 내용은 아래 "자동화 훅" 절).
 
 ## 🇺🇸 Architecture
@@ -89,7 +94,8 @@
  ┌───────────────────────────────────────────────────┐
  │  Ralph TUI (sentinel.sh supervises / auto-restart)│
  │                                                   │
- │  Spins up a fresh Claude session per task         │
+ │  Spins up a fresh agent session per task          │
+ │  (claude / codex / gemini)                        │
  │    • /research-search    (search + Tier 1/2 text) │
  │    • /research-read      (Tier 3 retry)           │
  │    • /research-snowball  (reference tracing)      │
@@ -101,7 +107,7 @@
             findings/ directory + Notion DB
 ```
 
-- **Ralph TUI** spawns a fresh Claude session per task, so prior work crosses sessions only via `findings/*.md` files and `_checkpoint.json`.
+- **Ralph TUI** spawns a fresh agent session per task, so prior work crosses sessions only via `findings/*.md` files and `_checkpoint.json`.
 - Four automation hooks registered in `.claude/settings.json` enforce pipeline quality (see "Automation hooks" below).
 
 ---
@@ -159,6 +165,11 @@ cp .env.example .env
 # 에이전트 전환 (기본값은 .env의 AGENT, 없으면 claude)
 ./start-research.sh deep --agent codex
 ./start-research.sh deep --agent gemini
+
+# 프로젝트 라이브러리 — 이전 주제 보존 · 목록 · 복원
+./start-research.sh library                 # 아카이브된 프로젝트 목록 보기
+./start-research.sh restore <slug>          # 과거 프로젝트를 루트로 복원
+./start-research.sh deep --name my-topic-v1 # 기존 작업을 이 이름으로 자동 보존 후 새 주제 시작
 ```
 
 장시간 실행되므로 `tmux` 안에서 돌리는 것을 권장합니다:
@@ -230,6 +241,11 @@ Proxy URL shapes vary by institution (`https://<proxy-host>/?url=`, `https://<li
 # Switch agent (defaults to AGENT in .env, or `claude` when unset)
 ./start-research.sh deep --agent codex
 ./start-research.sh deep --agent gemini
+
+# Project library — preserve, list, restore past topics
+./start-research.sh library                 # show archived projects
+./start-research.sh restore <slug>          # bring a past project back to root
+./start-research.sh deep --name my-topic-v1 # auto-archive current work under this name, then start new topic
 ```
 
 Runs are long, so use `tmux`:
@@ -348,6 +364,108 @@ does not proxy authentication.
   `--agent` flag (see `ralph-tui plugins agents`).
 - When resuming a Ralph session, the **agent the session was started with** is
   preserved (mid-session switching is not supported).
+
+---
+
+## 🇰🇷 프로젝트 라이브러리 (여러 주제를 안전하게 오가기)
+
+이 파이프라인은 `findings/` · `research-config.json` · `prd.json` 을 루트에 직접 둡니다. 그래서 새 주제를 시작하면 이전 작업이 덮어쓰일 위험이 있습니다. **프로젝트 라이브러리**는 이 문제를 자동으로 해결해, 새 주제를 시작할 때 기존 작업을 `archive/` 로 보존하고 언제든 되돌릴 수 있게 합니다.
+
+### 동작 방식
+
+- **자동 아카이브** — `./start-research.sh deep` (또는 `trend`) 실행 중 "기존 설정을 사용할까요? (Y/n)" 에 `n` 이라고 답하면, 루트의 현재 상태(`research-config.json`, `prd.json`, `findings/`, `.ralph-tui/` 의 재사용 가능한 일부)가 `archive/{slug}-{YYYYMMDD-HHMMSS}/` 로 이동합니다.
+- **Slug 자동 생성** — 기본값은 `research-config.json` 의 첫 키워드를 kebab-case 로 변환 (예: `4D-QSAR` → `4d-qsar`). `--name my-v1` 옵션으로 덮어쓸 수 있습니다.
+- **라이브러리 목록** — `./start-research.sh library` 로 아카이브된 프로젝트를 표로 확인 (slug / topic / mode / papers / phase / archived_at).
+- **Swap 복원** — `./start-research.sh restore <slug>` 는 현재 루트 상태를 먼저 자동 아카이브한 뒤 지정 프로젝트를 루트로 되돌립니다. slug 는 전체 이름 또는 고유 접두어.
+
+### 명령 요약
+
+```bash
+# 현재 작업을 수동으로 아카이브 (--name 은 선택)
+node scripts/lib/project-archive.mjs archive --name my-baseline
+
+# 목록
+./start-research.sh library
+
+# 복원 (swap — 현재 루트는 자동 보존)
+./start-research.sh restore 4d-qsar-pampa-20260416-183804
+./start-research.sh restore 4d-qsar          # 접두어가 유일하면 OK
+
+# 복원 직후 재개
+./start-research.sh run
+```
+
+### 아카이브 구조
+
+```
+archive/{slug}-{YYYYMMDD-HHMMSS}/
+├── manifest.json          # slug, topic, keywords, mode, papers_collected, archived_at, agent 등
+├── research-config.json   # 루트에서 이동
+├── prd.json               # 루트에서 이동
+├── findings/              # 루트에서 이동 (_checkpoint.json 포함)
+└── ralph-session/
+    ├── config.toml        # 복사 (루트에도 남겨 다음 세션에 재사용)
+    ├── templates/         # 복사
+    ├── progress.md        # 이동 (루트는 깨끗하게 리셋)
+    ├── iterations/        # 이동
+    └── reports/           # 이동
+```
+
+### 주의 사항
+
+- **Ralph TUI 세션 자체는 복원 대상이 아닙니다.** `session.json` 등은 절대경로·프로세스 PID 에 묶여 있어서 복원 후엔 `./start-research.sh run` 으로 새 세션을 시작해야 합니다 (`prd.json` 은 그대로라 Ralph 가 진행 상태를 다시 계산).
+- **Ralph 실행 중에는 아카이브가 차단됩니다** (`.ralph-tui/ralph.lock` 의 PID 가 살아있는 경우). 죽은 프로세스가 남긴 **stale 락**은 자동으로 정리됩니다.
+- `archive/` 는 `.gitignore` 되어 있습니다. 특정 스냅샷을 커밋하고 싶다면 수동으로 `git add -f archive/<slug>/` 하세요.
+
+## 🇺🇸 Project library (swap topics safely)
+
+The pipeline keeps `findings/` · `research-config.json` · `prd.json` at the repo root, so starting a new topic could overwrite prior work. The **project library** handles this automatically: when you start a new topic, current work is preserved under `archive/`, and you can bring any past project back whenever.
+
+### How it works
+
+- **Automatic archive** — While running `./start-research.sh deep` (or `trend`), answering `n` at the `"Use existing config? (Y/n)"` prompt moves the root state (`research-config.json`, `prd.json`, `findings/`, and reusable bits of `.ralph-tui/`) into `archive/{slug}-{YYYYMMDD-HHMMSS}/`.
+- **Auto-derived slug** — Defaults to the first keyword of `research-config.json`, kebab-cased (`4D-QSAR` → `4d-qsar`). Override with `--name my-v1`.
+- **Library listing** — `./start-research.sh library` prints an archive table (slug / topic / mode / papers / phase / archived_at).
+- **Swap restore** — `./start-research.sh restore <slug>` first auto-archives current root state, then restores the named project. Slug can be the full directory name or a unique prefix.
+
+### Command summary
+
+```bash
+# Manually archive current work (--name optional)
+node scripts/lib/project-archive.mjs archive --name my-baseline
+
+# List
+./start-research.sh library
+
+# Restore (swap — current root is auto-preserved)
+./start-research.sh restore 4d-qsar-pampa-20260416-183804
+./start-research.sh restore 4d-qsar          # prefix match, if unique
+
+# Resume right after restore
+./start-research.sh run
+```
+
+### Archive layout
+
+```
+archive/{slug}-{YYYYMMDD-HHMMSS}/
+├── manifest.json          # slug, topic, keywords, mode, papers_collected, archived_at, agent, ...
+├── research-config.json   # moved from root
+├── prd.json               # moved from root
+├── findings/              # moved from root (includes _checkpoint.json)
+└── ralph-session/
+    ├── config.toml        # copied (stays in root for the next session too)
+    ├── templates/         # copied
+    ├── progress.md        # moved (root resets clean)
+    ├── iterations/        # moved
+    └── reports/           # moved
+```
+
+### Caveats
+
+- **The Ralph TUI session itself is not restored.** `session.json` and friends are tied to absolute paths and live PIDs; after a restore, start a new session with `./start-research.sh run` (Ralph recomputes progress from `prd.json`).
+- **Archiving is blocked while Ralph is running** (a live PID in `.ralph-tui/ralph.lock`). **Stale locks** from dead processes are cleaned up automatically.
+- `archive/` is in `.gitignore`. To commit a specific snapshot, force-add it: `git add -f archive/<slug>/`.
 
 ---
 
@@ -646,8 +764,10 @@ Every `WebSearch` call logs query / source / result count / academic ratio into 
 ```
 research-pipeline/
 ├── .claude/
-│   ├── settings.json              # 훅 설정
-│   └── skills/                    # 12개 연구 스킬
+│   ├── settings.json              # 훅 설정 (Claude Code 전용)
+│   └── skills/                    # 12개 연구 스킬 (정본)
+├── .codex/skills/                 # Codex CLI 파생물 (자동 생성, .gitignore)
+├── .gemini/commands/              # Gemini CLI 래퍼 (자동 생성, .gitignore)
 ├── .ralph-tui/
 │   └── config.toml                # Ralph TUI 설정
 ├── scripts/
@@ -657,12 +777,21 @@ research-pipeline/
 │   ├── setup-proxy.sh             # EZproxy 대화형 초기 설정
 │   ├── setup-auth.sh              # Playwright 세션 쿠키 설정
 │   ├── sentinel.sh                # Ralph 프로세스 감시
-│   └── hooks/                     # 자동화 훅 구현체
-├── findings/                      # 파이프라인 결과물
+│   ├── run-agent.sh               # claude/codex/gemini 호출 래퍼
+│   ├── sync-agent-assets.mjs      # .claude/skills → .codex/.gemini 동기화
+│   ├── hooks/                     # 자동화 훅 구현체
+│   └── lib/
+│       ├── checkpoint.mjs         # 진행 체크포인트 (스킬 경계에서 호출)
+│       ├── pipeline-guard.mjs     # 선행 조건 가드
+│       ├── coverage-verifier.mjs  # 커버리지 검증
+│       └── project-archive.mjs    # 프로젝트 라이브러리 (archive/list/restore)
+├── archive/                       # 프로젝트 라이브러리 (과거 주제 보관, .gitignore)
+├── findings/                      # 파이프라인 결과물 (활성 프로젝트)
 ├── research-config.json           # 연구 설정(인테이크 산출물)
 ├── prd.json                       # Ralph TUI가 실행할 태스크
 ├── .env.example                   # 환경변수 템플릿 (.env는 .gitignore)
-├── CLAUDE.md                      # Claude Code 지침
+├── CLAUDE.md                      # Claude Code 지침 (Claude 전용)
+├── AGENTS.md                      # Codex/Gemini 공용 지침
 ├── start-research.sh              # 진입점
 └── README.md                      # 이 파일
 ```
@@ -672,8 +801,10 @@ research-pipeline/
 ```
 research-pipeline/
 ├── .claude/
-│   ├── settings.json              # hook settings
-│   └── skills/                    # 12 research skills
+│   ├── settings.json              # hook settings (Claude Code only)
+│   └── skills/                    # 12 research skills (source of truth)
+├── .codex/skills/                 # Codex CLI derivatives (auto-generated, gitignored)
+├── .gemini/commands/              # Gemini CLI wrappers (auto-generated, gitignored)
 ├── .ralph-tui/
 │   └── config.toml                # Ralph TUI config
 ├── scripts/
@@ -683,12 +814,21 @@ research-pipeline/
 │   ├── setup-proxy.sh             # interactive EZproxy setup
 │   ├── setup-auth.sh              # Playwright session cookie setup
 │   ├── sentinel.sh                # Ralph process supervisor
-│   └── hooks/                     # hook implementations
-├── findings/                      # pipeline output
+│   ├── run-agent.sh               # claude/codex/gemini invocation wrapper
+│   ├── sync-agent-assets.mjs      # sync .claude/skills → .codex/.gemini
+│   ├── hooks/                     # hook implementations
+│   └── lib/
+│       ├── checkpoint.mjs         # progress checkpoint (called at skill boundaries)
+│       ├── pipeline-guard.mjs     # precondition guard
+│       ├── coverage-verifier.mjs  # coverage verifier
+│       └── project-archive.mjs    # project library (archive / list / restore)
+├── archive/                       # project library — past topics (gitignored)
+├── findings/                      # pipeline output (active project)
 ├── research-config.json           # research config (intake output)
 ├── prd.json                       # Ralph TUI task list
 ├── .env.example                   # env-var template (.env is gitignored)
 ├── CLAUDE.md                      # instructions for Claude Code
+├── AGENTS.md                      # shared instructions for Codex/Gemini
 ├── start-research.sh              # entry point
 └── README.md                      # this file
 ```
