@@ -1,6 +1,6 @@
 ---
 name: research-search
-description: "다중 소스 논문 검색 스킬. WebSearch, OpenAlex, Semantic Scholar, arXiv, Google Scholar를 전부 검색하고, 다중 쿼리 변형과 눈덩이(Snowball) 추적을 수행하여 논문을 빠짐없이 수집한다. 발견한 논문의 증거 카드를 작성한다. '논문 검색', '문헌 조사', '키워드 검색', 'literature search' 요청 시 사용."
+description: "다중 소스 논문 검색 + 즉시 전문 수집 스킬. WebSearch, OpenAlex, Semantic Scholar, arXiv, Google Scholar를 전부 검색하고, DOI 확인 즉시 Tier 1/2로 전문을 수집하여 증거 카드를 보강한다. 다중 쿼리 변형과 눈덩이(Snowball) 추적을 수행하여 논문을 빠짐없이 수집한다. '논문 검색', '문헌 조사', '키워드 검색', 'literature search' 요청 시 사용."
 ---
 
 # 논문 검색 스킬
@@ -32,6 +32,27 @@ description: "다중 소스 논문 검색 스킬. WebSearch, OpenAlex, Semantic 
 3. 모든 조합에 대해 순차적으로 검색을 수행한다
 
 ## 검색 절차
+
+### 0단계: 검색 지혜 참조 + 활성 태스크 등록
+
+**검색 지혜 참조**: `findings/_search_wisdom.md` 파일이 존재하면 읽어서 참조한다.
+- 효과적인 패턴 → 우선적으로 시도
+- 비효과적인 패턴 → 회피하거나 변형하여 사용
+- 소스별 통계 → 결과가 많은 소스부터 검색
+
+**활성 태스크 등록**: 현재 실행 중인 태스크 정보를 `findings/_active_task_research.json`에 기록한다.
+이 파일은 Verify-Fix 훅이 검색 태스크인지 판별하는 데 사용된다.
+
+```json
+{
+  "id": "P1-SEARCH-01",
+  "keyword": "현재 검색 키워드",
+  "labels": ["search", "phase-1"],
+  "started_at": "ISO8601"
+}
+```
+
+검색 완료 시 이 파일을 삭제한다.
 
 ### 1단계: 기존 결과 확인 (중복 제거)
 
@@ -79,10 +100,54 @@ description: "다중 소스 논문 검색 스킬. WebSearch, OpenAlex, Semantic 
 
 **절대 규칙: 검색으로 찾지 못한 논문을 기억에 의존해서 언급하지 마라.**
 
-### 5단계: 증거 카드 작성
+### 5단계: 증거 카드 작성 + 즉시 전문 수집
 
 발견한 모든 논문에 대해 증거 카드를 작성한다.
 증거 카드 양식은 `<skill-dir>/docs/evidence-card.md` 참조.
+
+#### 5-1: 전문 즉시 수집 (Tier 1 → Tier 2)
+
+DOI가 확인된 **각 논문마다** 즉시 전문을 수집한다.
+검색과 전문 수집을 분리하지 않고, 논문을 찾는 즉시 전문까지 확보하는 것이 원칙이다.
+
+**절차:**
+
+1. **Tier 1 시도** (API, 토큰 소비 없음):
+   ```bash
+   node scripts/fetch-paper.js --tier1-only --json <DOI>
+   ```
+   - 성공 시: `findings/raw_texts/{doi-slug}.md`에 저장됨
+   - 실패 시: Tier 2로 진행
+
+2. **Tier 2 시도** (브라우저, 토큰 소비 없음):
+   ```bash
+   node scripts/fetch-paper.js --tier2-only --json <DOI>
+   ```
+   - 성공 시: `findings/raw_texts/{doi-slug}.md`에 저장됨
+   - 실패 시: 증거 카드에 `[전문 확보 대기 - Tier 3 필요]` 태그 부착
+
+3. **성공 시 즉시 증거 카드 보강**:
+   - `findings/raw_texts/{doi-slug}.md`를 읽고 증거 카드의 방법론, 핵심 발견, 한계점 필드를 보강
+   - `[전문 확인 - 티어{N}/{source}]` 태그 부착 (예: `[전문 확인 - 티어1/pmc]`)
+
+4. **Tier 1+2 모두 실패 시**:
+   - 증거 카드에 `[전문 확보 대기 - Tier 3 필요]` 태그 부착
+   - 후속 `/research-read` 스킬에서 Tier 3(Playwright MCP)으로 재시도
+
+**병렬 처리 팁:**
+- 논문이 여러 편이면, DOI 목록을 모아서 한 번에 배치 처리할 수도 있다:
+  ```bash
+  node scripts/fetch-paper.js --tier1-only --json <DOI1> <DOI2> <DOI3>
+  ```
+- Tier 1 성공률이 낮으면 Tier 2를 일괄 시도한다
+
+**보고 형식:**
+```
+📄 전문 수집 결과 (이 키워드 조합)
+  ✅ Tier 1 성공: N편 (unpaywall: X, pmc: Y, semanticScholar: Z)
+  ✅ Tier 2 성공: M편 (ezproxy-headless: A, ezproxy-headed: B)
+  ⏳ Tier 3 대기: K편 (후속 /research-read에서 처리)
+```
 
 ### 6단계: Snowball 추적
 
@@ -104,6 +169,7 @@ Snowball 추적의 상세 절차는 `<skill-dir>/docs/search-strategy.md` 참조
 - 검토한 논문 총 수: N개
 - 최종 선별 수: M개
 - Snowball 추적 깊이: N단계
+- 전문 수집: 성공 X편 (Tier 1: A, Tier 2: B) / Tier 3 대기 Y편
 - 자체 점검: 더 찾을 수 있는 논문이 남아있는가? [예/아니오 + 근거]
 ```
 

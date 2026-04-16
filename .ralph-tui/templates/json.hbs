@@ -84,11 +84,12 @@ Read(file_path="저장된경로", offset=500, limit=500)
 ... 끝까지 반복하여 논문 전체를 읽어라.
 ```
 
-**WebFetch가 403 에러를 반환하면 → 무시하고 넘어가지 마라 → 즉시 Playwright 절차를 실행하라.**
+**DOI가 확인된 논문마다 즉시 `node scripts/fetch-paper.js`로 Tier 1/2 전문 수집을 시도하라.**
+**Tier 1/2 실패 시 `[전문 확보 대기 - Tier 3 필요]` 태그를 부착하고, 후속 /research-read에서 재시도한다.**
 
 ### 작업 흐름 (반드시 이 순서를 따라라)
 
-**검색 → 즉시 읽기 → 기록 을 논문 하나마다 반복하라. 검색만 모아서 하고 나중에 읽겠다고 미루지 마라.**
+**검색 → 즉시 Tier 1/2 전문 수집 → 기록 을 논문 하나마다 반복하라. 검색만 모아서 하고 나중에 읽겠다고 미루지 마라.**
 
 ### 검색 전략
 - **다중 소스 검색**: WebSearch로 일반 검색 + OpenAlex, Semantic Scholar, arXiv, Google Scholar
