@@ -25,3 +25,18 @@ archive/
 findings/
 logs/
 test-results/
+downloads/
+collections/
+
+# 임시 테스트 데이터
+.playwright-form-test*/
+
+# OS
+.DS_Store
+
+# 훅 런타임 데이터 (findings/ 내부이므로 이미 제외되지만 명시)
+# findings/_checkpoint.json
+# findings/_active_task.json
+# findings/_verify_retries.json
+# findings/_search_wisdom.json
+# findings/_search_wisdom.md

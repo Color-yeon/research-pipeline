@@ -1,6 +1,9 @@
 #!/bin/bash
-# 심층 참고문헌 조사 — prd.json 생성
-# 3단계 구조: 검색+읽기시도 → 못읽은것 Chrome읽기 → 통합분석+재검색
+# [DEPRECATED] 이 스크립트는 이전 버전의 파이프라인용입니다.
+# 현재는 /research-tasks 스킬이 prd.json을 생성합니다.
+# 새 파이프라인: 검색+Tier1/2전문수집 → 신뢰성 → Tier3재시도 → 분석
+#
+# 이전 3단계 구조: 검색+읽기시도 → 못읽은것 Chrome읽기 → 통합분석+재검색
 set -euo pipefail
 
 CONFIG="${1:?사용법: $0 research-config.json}"
