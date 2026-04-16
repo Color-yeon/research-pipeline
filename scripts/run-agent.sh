@@ -1,0 +1,170 @@
+#!/bin/bash
+# ─────────────────────────────────────────────────────────────────────
+# 에이전트 중립 실행 래퍼
+#
+# 사용법:
+#   scripts/run-agent.sh interactive [--system-prompt <file>]
+#       대화형 세션을 연다. 시스템 프롬프트 파일이 주어지면 그 내용을
+#       사전 컨텍스트로 주입한다.
+#
+#   scripts/run-agent.sh exec "<prompt>"
+#       프롬프트 한 번 실행 후 종료(non-interactive).
+#
+# 환경변수 AGENT 로 사용할 CLI를 지정한다 (.env 에서 로드).
+#   claude  — Anthropic Claude Code CLI
+#   codex   — OpenAI Codex CLI
+#   gemini  — Google Gemini CLI (명령어 `gemini-cli`)
+#
+# 세 에이전트 모두 .claude/skills/ → sync-agent-assets.mjs 파생물 또는
+# AGENTS.md 를 자동으로 로드하므로, 같은 슬래시 커맨드로 동작한다.
+# ─────────────────────────────────────────────────────────────────────
+set -euo pipefail
+
+PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+
+# .env 로드 (있으면)
+if [ -f "$PROJECT_DIR/.env" ]; then
+    set -a
+    # shellcheck disable=SC1090
+    source "$PROJECT_DIR/.env"
+    set +a
+fi
+
+AGENT="${AGENT:-claude}"
+
+# ── 에이전트별 대화형 실행 ───────────────────────────────────────────
+run_interactive() {
+    local sys_prompt_file="$1"
+
+    case "$AGENT" in
+        claude)
+            if [ -n "$sys_prompt_file" ] && [ -f "$sys_prompt_file" ]; then
+                exec claude --dangerously-skip-permissions \
+                    --append-system-prompt "$(cat "$sys_prompt_file")"
+            else
+                exec claude --dangerously-skip-permissions
+            fi
+            ;;
+
+        codex)
+            # Codex CLI는 AGENTS.md 를 자동 로드하므로 베이스 컨텍스트는 이미 주어진다.
+            # 추가 시스템 프롬프트가 있으면 화면에 먼저 보여주고 사용자가 대화 첫 턴에
+            # 참조하도록 안내한다(현재 Codex CLI는 대화형 진입 시 --system-prompt
+            # 플래그를 공식 지원하지 않는다. 향후 지원되면 이 분기를 갱신).
+            if [ -n "$sys_prompt_file" ] && [ -f "$sys_prompt_file" ]; then
+                echo "────────────────────────────────────────"
+                echo " 인테이크 지시서 (Codex에 직접 붙여넣어 시작하세요)"
+                echo "────────────────────────────────────────"
+                cat "$sys_prompt_file"
+                echo ""
+                echo "────────────────────────────────────────"
+                echo " 위 내용을 복사해 첫 메시지로 보내거나, \"@${sys_prompt_file}\" 로 참조하세요."
+                echo "────────────────────────────────────────"
+                echo ""
+            fi
+            exec codex
+            ;;
+
+        gemini)
+            # Gemini CLI 도 GEMINI.md/AGENTS.md 를 자동 로드한다.
+            # 추가 시스템 프롬프트는 @파일경로 구문으로 참조하게 안내한다.
+            if [ -n "$sys_prompt_file" ] && [ -f "$sys_prompt_file" ]; then
+                echo "────────────────────────────────────────"
+                echo " 인테이크 지시서"
+                echo "────────────────────────────────────────"
+                echo "첫 메시지로 다음을 입력하세요:"
+                echo "   @${sys_prompt_file}"
+                echo ""
+            fi
+            exec gemini-cli
+            ;;
+
+        *)
+            echo "❌ 지원하지 않는 AGENT 값: '$AGENT' (claude|codex|gemini 중 하나여야 합니다)" >&2
+            exit 1
+            ;;
+    esac
+}
+
+# ── 에이전트별 일회성 실행 ───────────────────────────────────────────
+run_exec() {
+    local prompt="$1"
+
+    case "$AGENT" in
+        claude)
+            exec claude --dangerously-skip-permissions -p "$prompt"
+            ;;
+
+        codex)
+            # Codex CLI 의 non-interactive 실행
+            exec codex exec --full-auto "$prompt"
+            ;;
+
+        gemini)
+            # Gemini CLI 의 non-interactive 실행
+            exec gemini-cli -p "$prompt"
+            ;;
+
+        *)
+            echo "❌ 지원하지 않는 AGENT 값: '$AGENT' (claude|codex|gemini 중 하나여야 합니다)" >&2
+            exit 1
+            ;;
+    esac
+}
+
+# ── 메인 분기 ────────────────────────────────────────────────────────
+MODE="${1:-}"
+shift || true
+
+case "$MODE" in
+    interactive)
+        SYS_PROMPT_FILE=""
+        while [ $# -gt 0 ]; do
+            case "$1" in
+                --system-prompt)
+                    SYS_PROMPT_FILE="$2"
+                    shift 2
+                    ;;
+                *)
+                    echo "⚠ 알 수 없는 인자: $1 (무시)" >&2
+                    shift
+                    ;;
+            esac
+        done
+        run_interactive "$SYS_PROMPT_FILE"
+        ;;
+
+    exec)
+        PROMPT="${1:-}"
+        if [ -z "$PROMPT" ]; then
+            echo "❌ exec 모드는 프롬프트 인자가 필요합니다." >&2
+            echo "   예: $0 exec \"/research-tasks deep\"" >&2
+            exit 1
+        fi
+        run_exec "$PROMPT"
+        ;;
+
+    ""|-h|--help|help)
+        cat <<USAGE
+에이전트 중립 실행 래퍼
+
+사용법:
+  $0 interactive [--system-prompt <file>]
+  $0 exec "<prompt>"
+
+환경변수 AGENT 값 (.env 또는 shell 에서 설정):
+  claude | codex | gemini
+  현재: ${AGENT}
+
+예시:
+  AGENT=claude $0 interactive --system-prompt scripts/intake-prompt-deep.md
+  AGENT=codex  $0 exec "/research-tasks deep"
+USAGE
+        exit 0
+        ;;
+
+    *)
+        echo "❌ 알 수 없는 모드: '$MODE' (interactive|exec 중 하나)" >&2
+        exit 1
+        ;;
+esac

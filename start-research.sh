@@ -2,10 +2,16 @@
 # 연구 자동화 파이프라인 — 진입점
 #
 # 사용법:
-#   ./start-research.sh deep    # 심층 참고문헌 조사 (처음부터)
-#   ./start-research.sh trend   # 동향 탐구 (처음부터)
-#   ./start-research.sh run     # 기존 prd.json으로 바로 실행
-#   ./start-research.sh resume  # 중단된 세션 재개
+#   ./start-research.sh <mode> [--agent <claude|codex|gemini>]
+#
+# 모드:
+#   deep    — 심층 참고문헌 조사 (처음부터)
+#   trend   — 동향 탐구 (처음부터)
+#   run     — 기존 prd.json으로 바로 실행
+#   resume  — 중단된 세션 재개
+#
+# --agent 옵션을 주면 .env 의 AGENT 값을 이 실행에서만 덮어쓴다.
+# 옵션이 없으면 .env 의 AGENT (기본 claude)를 사용한다.
 #
 # tmux에서 실행 권장:
 #   tmux new -s research
@@ -19,32 +25,94 @@ CONFIG_FILE="$PROJECT_DIR/research-config.json"
 PRD_FILE="$PROJECT_DIR/prd.json"
 RALPH_BIN="$HOME/.bun/bin/ralph-tui"
 
-MODE="${1:-}"
+# ── 인자 파싱 (모드 + --agent) ─────────────────────────────────────
+MODE=""
+AGENT_OVERRIDE=""
 
-if [ -z "$MODE" ] || { [ "$MODE" != "deep" ] && [ "$MODE" != "trend" ] && [ "$MODE" != "run" ] && [ "$MODE" != "resume" ]; }; then
-    echo "=========================================="
-    echo " 연구 자동화 파이프라인"
-    echo "=========================================="
-    echo ""
-    echo "사용법:"
-    echo "  ./start-research.sh deep    # 심층 참고문헌 조사 (처음부터)"
-    echo "  ./start-research.sh trend   # 동향 탐구 (처음부터)"
-    echo "  ./start-research.sh run     # 기존 prd.json으로 바로 실행"
-    echo "  ./start-research.sh resume  # 중단된 세션 재개"
-    echo ""
-    echo "모드 설명:"
-    echo "  deep   — 연구 주제의 키워드 조합 완전탐색 + 실험 설계 지원"
-    echo "  trend  — 리뷰 논문 기반 동향 파악 + 최신 트렌드"
-    echo "  run    — research-config.json + prd.json이 이미 있을 때 바로 실행"
-    echo "  resume — 중단된 세션을 이어서 실행"
-    echo ""
+show_usage() {
+    cat <<'USAGE'
+==========================================
+ 연구 자동화 파이프라인
+==========================================
+
+사용법:
+  ./start-research.sh <mode> [--agent <name>]
+
+모드:
+  deep    — 연구 주제의 키워드 조합 완전탐색 + 실험 설계 지원
+  trend   — 리뷰 논문 기반 동향 파악 + 최신 트렌드
+  run     — research-config.json + prd.json이 이미 있을 때 바로 실행
+  resume  — 중단된 세션을 이어서 실행
+
+옵션:
+  --agent <name>   claude | codex | gemini (.env의 AGENT를 1회용 덮어쓰기)
+
+예시:
+  ./start-research.sh deep
+  ./start-research.sh deep --agent codex
+  AGENT=gemini ./start-research.sh run
+USAGE
+}
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        deep|trend|run|resume)
+            MODE="$1"
+            shift
+            ;;
+        --agent)
+            AGENT_OVERRIDE="${2:-}"
+            if [ -z "$AGENT_OVERRIDE" ]; then
+                echo "❌ --agent 옵션에 값이 없습니다." >&2
+                exit 1
+            fi
+            shift 2
+            ;;
+        --agent=*)
+            AGENT_OVERRIDE="${1#*=}"
+            shift
+            ;;
+        -h|--help|help)
+            show_usage
+            exit 0
+            ;;
+        *)
+            echo "❌ 알 수 없는 인자: '$1'" >&2
+            echo ""
+            show_usage
+            exit 1
+            ;;
+    esac
+done
+
+if [ -z "$MODE" ]; then
+    show_usage
     exit 1
 fi
 
+# ── 에이전트 설정 (--agent > .env AGENT > 기본 claude) ──────────────
+# run-agent.sh 와 Ralph TUI 가 같은 AGENT 값을 보도록 export 한다.
+if [ -n "$AGENT_OVERRIDE" ]; then
+    case "$AGENT_OVERRIDE" in
+        claude|codex|gemini)
+            export AGENT="$AGENT_OVERRIDE"
+            ;;
+        *)
+            echo "❌ 지원하지 않는 --agent 값: '$AGENT_OVERRIDE' (claude|codex|gemini)" >&2
+            exit 1
+            ;;
+    esac
+fi
+# .env 의 AGENT 는 run-agent.sh / sentinel.sh 가 로드할 때 반영됨.
+# AGENT_OVERRIDE 가 없고 환경변수 AGENT 도 없다면 여기서 기본값을 표기만 해둔다.
+AGENT_DISPLAY="${AGENT:-$(grep -E '^AGENT=' "$PROJECT_DIR/.env" 2>/dev/null | head -n 1 | cut -d'=' -f2- || echo claude)}"
+AGENT_DISPLAY="${AGENT_DISPLAY:-claude}"
+
 echo "=========================================="
 echo " 연구 자동화 파이프라인"
-echo " 모드: $MODE"
-echo " 시작: $(date '+%Y-%m-%d %H:%M:%S')"
+echo " 모드:    $MODE"
+echo " 에이전트: $AGENT_DISPLAY"
+echo " 시작:    $(date '+%Y-%m-%d %H:%M:%S')"
 echo "=========================================="
 
 # === EZproxy/도서관 프록시 초기 설정 ===
@@ -136,10 +204,10 @@ if [ "${SKIP_INTAKE:-false}" != "true" ]; then
         exit 1
     fi
     cd "$PROJECT_DIR"
-    echo "Claude와 대화하여 연구 주제를 설정합니다."
+    echo "에이전트($AGENT_DISPLAY)와 대화하여 연구 주제를 설정합니다."
     echo "대화가 끝나면 /exit 또는 Ctrl+C로 종료하세요."
     echo ""
-    claude --dangerously-skip-permissions --append-system-prompt "$(cat "$INTAKE_PROMPT")"
+    bash "$SCRIPTS_DIR/run-agent.sh" interactive --system-prompt "$INTAKE_PROMPT"
 
     if [ ! -f "$CONFIG_FILE" ]; then
         echo ""
@@ -157,7 +225,7 @@ echo " Phase 1: 태스크 생성 (/research-tasks)"
 echo "────────────────────────────────────────"
 
 cd "$PROJECT_DIR"
-claude --dangerously-skip-permissions -p "/research-tasks $MODE"
+bash "$SCRIPTS_DIR/run-agent.sh" exec "/research-tasks $MODE"
 
 if [ ! -f "$PRD_FILE" ]; then
     echo "❌ prd.json이 생성되지 않았습니다."
