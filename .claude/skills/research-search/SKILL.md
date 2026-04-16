@@ -204,6 +204,38 @@ Snowball 추적의 상세 절차는 `<skill-dir>/docs/search-strategy.md` 참조
 저자 (연도). 제목. 저널. DOI: https://doi.org/...
 ```
 
+## 종료 단계: 커버리지 자가 검증 + 체크포인트 저장
+
+검색을 마치기 직전에 **반드시** 아래 두 명령을 Bash 도구로 실행하라.
+이 두 단계는 Claude Code 의 Stop/PreCompact 훅이 담당하던 보장을 Codex·Gemini
+경로에서도 동일하게 유지하기 위한 에이전트 중립 안전망이다.
+
+### 1) 커버리지 자가 검증
+
+```bash
+node scripts/lib/coverage-verifier.mjs "<이번 키워드 조합>"
+```
+
+- exit 0 → 통과. 다음 단계로 진행한다.
+- exit 1 → 갭 발견. stdout 에 표시된 부족 항목(논문 수 / 소스 / 쿼리 변형)을
+  읽고, **같은 스킬 안에서** 추가 검색을 수행하여 갭을 해소한 뒤 다시 호출한다.
+  3회 시도 후에도 통과 못 하면 findings 파일에 `커버리지 미해결` 메모를 남기고
+  종료한다(무한 루프 방지).
+
+Claude Code 에서는 `.claude/settings.json` 의 Stop 훅이 같은 검사를 이벤트
+수준에서 추가로 수행하므로 이 명령이 중복처럼 느껴질 수 있다. 그래도 항상
+실행하라 — 다른 에이전트 경로에서는 이 호출이 유일한 방어선이다.
+
+### 2) 체크포인트 저장
+
+```bash
+node scripts/lib/checkpoint.mjs
+```
+
+findings/ 전체 상태를 `findings/_checkpoint.json` 에 기록한다.
+Ralph TUI 의 다음 태스크(또는 컨텍스트 압축 후 재주입) 가 이 파일을 참조해
+진행 상황을 이어간다. 실패해도 스킬은 계속 진행한다(베스트 에포트).
+
 ## 참고 문서
 
 - `<skill-dir>/docs/search-strategy.md` -- 다중 소스 검색 전략 상세
