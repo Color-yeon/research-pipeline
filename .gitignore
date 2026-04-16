@@ -34,6 +34,16 @@ logs/
 test-results/
 downloads/
 
+# 연구 세션별 생성물 (주제·키워드·하위질문·태스크가 담긴 기획 문서)
+# 과거 실수로 커밋되어 공개된 적이 있어 명시적으로 제외한다.
+research-config.json
+prd.json
+
+# 노션 업로드용 임시 파일 (root에 생성될 가능성 있는 변종 포함)
+notion_pages.txt
+notion_*.json
+_notion_*.json
+
 # 학회 논문 증분 수집 (로컬 전용 — 레포에서 제외)
 collections/
 .claude/skills/conference-collect/
