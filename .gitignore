@@ -36,8 +36,11 @@ downloads/
 
 # 연구 세션별 생성물 (주제·키워드·하위질문·태스크가 담긴 기획 문서)
 # 과거 실수로 커밋되어 공개된 적이 있어 명시적으로 제외한다.
+# prd.json* 패턴은 prd.json 본체뿐 아니라 prd.json.bak, prd.json.YYYY-MM-DD 같은 백업 변종까지 함께 잡는다.
 research-config.json
+research-config.json*
 prd.json
+prd.json*
 
 # 노션 업로드용 임시 파일 (root에 생성될 가능성 있는 변종 포함)
 notion_pages.txt

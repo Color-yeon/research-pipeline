@@ -184,6 +184,27 @@ log "에이전트: $AGENT"
 log "최대 재시작: $MAX_RESTARTS"
 log "Rate limit 폴백 리셋 시간: 오전 ${FALLBACK_RESET_HOUR}시"
 
+# === prd.json 스키마 사전 검증 ===
+# ralph-tui 가 stricter 한 스키마 검증을 하므로(status 필드 금지 등),
+# 위반이 있으면 Ralph 가 "Total tasks: 0" 으로 즉시 종료되어 파이프라인이 사실상 실행되지 않는다.
+# 여기서 먼저 잡아 명확한 에러 메시지와 함께 중단하는 편이 훨씬 낫다.
+if [ -f "$PRD_FILE" ]; then
+    log "prd.json 스키마 검증 중..."
+    if node "$PROJECT_DIR/scripts/lib/validate-prd.mjs" "$PRD_FILE" 2>&1 | tee -a "$SENTINEL_LOG"; then
+        log "✓ prd.json 스키마 검증 통과"
+    else
+        log "❌ prd.json 스키마 검증 실패 — Sentinel 을 중단합니다."
+        log "   ralph-tui 는 이 prd.json 을 거부하므로 Ralph 실행은 무의미합니다."
+        log "   위 오류 메시지를 참고해 prd.json 을 고친 뒤 ./start-research.sh run 으로 재시도하세요."
+        log "=== Sentinel 종료 (prd.json 스키마 오류) ==="
+        exit 2
+    fi
+else
+    log "❌ prd.json 이 존재하지 않습니다: $PRD_FILE"
+    log "=== Sentinel 종료 (prd.json 없음) ==="
+    exit 2
+fi
+
 # Chrome 디버깅 모드 확인/실행 (매 시작 시)
 ensure_playwright_profile
 
