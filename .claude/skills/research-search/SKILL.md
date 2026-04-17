@@ -165,12 +165,13 @@ DOI가 확인된 **각 논문마다** 즉시 전문을 수집한다.
    - Tier 3 (Phase 3 `/research-read pending`) 는 Codex sandbox **바깥** 의 Playwright MCP 서버에서 돌기 때문에 영향을 받지 않는다. 그래서 sandbox 차단 논문이라도 Phase 3 에서 정상 접근된다.
    - 이 상황은 "오류" 가 아니라 "환경 제약" 이다. fetch-paper.js 를 한 번 더 돌려도 결과가 바뀔 거라고 기대하지 마라. 지금 해야 할 일은 **수집한 메타데이터로 한국어 증거 카드(`findings/<키워드-slug>.md`) 를 Write 로 저장** 하는 것이다.
 
-**병렬 처리 팁:**
-- 논문이 여러 편이면, DOI 목록을 모아서 한 번에 배치 처리할 수도 있다:
+**다수 DOI 일괄 처리 (권장)**:
+- fetch-paper.js 는 공백으로 구분된 **여러 DOI 를 위치 인자로 한 번에** 받는다. 이렇게 하면 셸 spawn 비용을 DOI 수만큼 아낄 수 있고, sandbox 차단 시 첫 DOI 에서 감지되어 나머지는 자동으로 needsTier3 로 스킵된다 (뻘짓 방지).
   ```bash
-  node scripts/fetch-paper.js --tier1-only --json <DOI1> <DOI2> <DOI3>
+  node scripts/fetch-paper.js --tier1-only --json <DOI1> <DOI2> <DOI3> <DOI4> ...
   ```
-- Tier 1 성공률이 낮으면 Tier 2를 일괄 시도한다
+- `--json` 옵션으로 호출하면 **DOI 가 1개면 단일 객체**, **2개 이상이면 배열**이 stdout 으로 나온다. 결과를 프로그램적으로 파싱하려면 `jq -c 'if type=="array" then .[] else . end'` 로 통일해 처리하라.
+- Tier 1 일괄 실패 이후에만 Tier 2 를 같은 방식으로 시도한다. Tier 1 에서 sandboxBlocked 가 감지되면 Tier 2 도 같은 환경이므로 반복 호출 금지 — 바로 증거 카드 작성과 Tier 3 대기 태그로 넘어가라.
 
 **보고 형식:**
 ```
