@@ -153,12 +153,17 @@ DOI가 확인된 **각 논문마다** 즉시 전문을 수집한다.
    - 증거 카드에 `[전문 확보 대기 - Tier 3 필요]` 태그 부착
    - 후속 `/research-read` 스킬에서 Tier 3(Playwright MCP)으로 재시도
 
-5. **Tier 2 sandbox 차단 감지 (Codex --full-auto 환경)**:
-   Codex CLI 가 `--full-auto`(= workspace-write sandbox) 로 돌 때 Playwright Chromium launch 가 macOS seatbelt 에 막혀 즉사한다. fetch-paper.js 출력의 JSON 에서 `"sandboxBlocked": true` 가 보이거나, 로그에 `Target page, context or browser has been closed` / `Permission denied (1100)` / `mach_port_rendezvous` 가 보이면 아래와 같이 행동하라:
-   - **같은 세션에서 Tier 2 를 반복 시도하지 마라.** 같은 환경이라 전부 똑같이 실패한다. (fetch-paper.js 는 첫 실패 후 나머지 method 를 자동 skip 한다.)
-   - 해당 DOI 의 증거 카드는 **검색 메타데이터(제목/저자/연도/저널/DOI/abstract)만으로도 최대한 작성**해 두고, 방법론·한계·데이터셋은 `[전문 확보 대기 - Tier 3 필요]` 태그로 비워 둔다.
-   - Tier 3 는 Codex sandbox 바깥의 Playwright MCP 서버에서 돌기 때문에 sandbox 영향을 받지 않는다 — 그래서 Phase 3 `/research-read pending` 이 여전히 정상 동작한다.
-   - 이 상황은 "오류" 가 아니라 "환경 제약"이다. 증거 카드를 만들지 않고 fetch 만 반복하지 마라.
+5. **Codex sandbox 차단 감지 (Tier 1 네트워크 또는 Tier 2 Chromium)**:
+   Codex CLI 가 `--full-auto`(= workspace-write sandbox) 로 돌면 두 가지가 함께 막힌다:
+   - **Tier 1**: 외부 API 호출(OpenAlex / Semantic Scholar / Unpaywall / PMC 등) 의 DNS lookup 실패 — `ENOTFOUND`, `EAI_AGAIN`, `ECONNREFUSED` 같은 에러가 나온다.
+   - **Tier 2**: Playwright Chromium launch 가 macOS seatbelt 에 막혀 즉사 — `Target page, context or browser has been closed`, `Permission denied (1100)`, `mach_port_rendezvous` 같은 에러.
+
+   fetch-paper.js 출력의 JSON 에 `"sandboxBlocked": true` 가 보이거나 로그에 위 패턴이 보이면 **같은 세션에서는 이 환경이 바뀌지 않는다**. 아래 규칙을 엄격히 지켜라:
+
+   - **같은 fetch-paper.js 호출을 다시 실행하지 마라.** 특히 `--tier1-only` 가 실패했다고 `--tier2-only` 로 재시도하는 것도 금지다 — Tier 1 과 Tier 2 는 같은 sandbox 를 공유하므로 결과가 바뀌지 않는다. "DOI 별 시도 기록을 남기겠다" 는 이유로도 반복하지 마라. 첫 호출의 `_fetch_results.json` 이 이미 영구 기록이다.
+   - 해당 DOI 의 증거 카드는 **검색 단계에서 얻은 메타데이터(제목 / 저자 / 연도 / 저널 / DOI / abstract) 만으로도 최대한 작성** 해 두고, 방법론·한계·데이터셋 필드는 `[전문 확보 대기 - Tier 3 필요]` 태그로 비워 둔다.
+   - Tier 3 (Phase 3 `/research-read pending`) 는 Codex sandbox **바깥** 의 Playwright MCP 서버에서 돌기 때문에 영향을 받지 않는다. 그래서 sandbox 차단 논문이라도 Phase 3 에서 정상 접근된다.
+   - 이 상황은 "오류" 가 아니라 "환경 제약" 이다. fetch-paper.js 를 한 번 더 돌려도 결과가 바뀔 거라고 기대하지 마라. 지금 해야 할 일은 **수집한 메타데이터로 한국어 증거 카드(`findings/<키워드-slug>.md`) 를 Write 로 저장** 하는 것이다.
 
 **병렬 처리 팁:**
 - 논문이 여러 편이면, DOI 목록을 모아서 한 번에 배치 처리할 수도 있다:

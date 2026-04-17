@@ -60,6 +60,22 @@ function log(msg) {
 // 티어 1: API 기반 수집
 // ─────────────────────────────────────────────
 
+// Tier 1 API 호출 에러가 sandbox 네트워크 차단 패턴인지 감지.
+// Codex --full-auto 는 기본적으로 외부 네트워크를 제한해,
+// api.unpaywall.org / api.semanticscholar.org / api.openalex.org 등에
+// 대한 DNS lookup 자체를 막는다. 이 때 Node 가 뱉는 시그널:
+//   - ENOTFOUND (DNS resolve 실패)
+//   - EAI_AGAIN (일시적 DNS 실패)
+//   - ECONNREFUSED (연결 자체 거부)
+//   - EHOSTUNREACH / ENETUNREACH (라우팅 차단)
+//   - "network_access" 등 codex sandbox 고유 메시지
+// Tier 2 와 같은 논리 — 한 번 보이면 동일 환경의 다른 API 도 똑같이
+// 막혀 있으므로 나머지를 반복하지 않고 즉시 Tier 3 위임.
+function isSandboxNetworkFailure(errMsg) {
+  if (!errMsg || typeof errMsg !== 'string') return false;
+  return /ENOTFOUND|EAI_AGAIN|ECONNREFUSED|EHOSTUNREACH|ENETUNREACH|network[ _]?access|getaddrinfo|blocked by .*sandbox/i.test(errMsg);
+}
+
 async function runTier1(doi, apiList) {
   const attempts = [];
 
@@ -70,6 +86,19 @@ async function runTier1(doi, apiList) {
     if (!result.success) {
       log(`  [티어1] ${apiName}: ${result.error}`);
       attempts.push({ tier: 1, source: apiName, error: result.error });
+
+      // Codex sandbox 가 네트워크 자체를 막는 경우: 나머지 Tier 1 API 도
+      // 똑같이 실패할 것이므로 루프 탈출 + sandboxBlocked 로 태그.
+      // 이후 orchestrator 가 Tier 2 도 건너뛰고 바로 Tier 3 로 보낸다.
+      if (isSandboxNetworkFailure(result.error)) {
+        log(`  [티어1] sandbox 네트워크 차단 감지 — 나머지 API 시도를 스킵합니다 (Tier 3 위임)`);
+        return {
+          success: false,
+          attempts,
+          sandboxBlocked: true,
+          sandboxReason: 'Tier 1 외부 API 호출이 Codex --full-auto 네트워크 sandbox 에서 차단됨. Tier 3 Playwright MCP 로 재시도 필요.',
+        };
+      }
       continue;
     }
 
@@ -253,6 +282,8 @@ async function fetchPaper(doi, options = {}) {
   log(`   라우트: 티어1=[${route.tier1.join(', ')}], 티어2={headed:${route.tier2.headed}}`);
 
   // 티어 1: API
+  let sandboxBlocked = false;
+  let sandboxReason = null;
   if (!options.skipTier1) {
     const tier1 = await runTier1(bareDoi, route.tier1);
     if (tier1.success) {
@@ -268,11 +299,18 @@ async function fetchPaper(doi, options = {}) {
       };
     }
     allAttempts.push(...(tier1.attempts || []));
+    if (tier1.sandboxBlocked) {
+      sandboxBlocked = true;
+      sandboxReason = tier1.sandboxReason || null;
+      // Tier 1 네트워크가 sandbox 로 막혀 있으면 Tier 2 Chromium 도
+      // 같은 sandbox 에서 똑같이 막힌다. 그래서 Tier 2 는 아예 시도하지
+      // 않고 곧장 Tier 3 로 위임한다. 에이전트가 --tier2-only 를 굳이
+      // 다시 돌리는 헛짓도 이 단계에서 사전 차단된다.
+      options = { ...options, tier1Only: true };
+    }
   }
 
   // 티어 2: 브라우저
-  let sandboxBlocked = false;
-  let sandboxReason = null;
   if (!options.tier1Only) {
     const tier2 = await runTier2(bareDoi, route);
     if (tier2.success) {
@@ -298,7 +336,7 @@ async function fetchPaper(doi, options = {}) {
   // sandboxBlocked 인 경우 로그 문구를 구분해, 에이전트가 "네트워크 오류" 가
   // 아니라 "환경 제약" 임을 알고 Tier 3(MCP) 로 바로 넘어가도록 유도한다.
   if (sandboxBlocked) {
-    log(`  ✗ 티어 2 sandbox 차단 → 티어 3(Playwright MCP) 에 위임`);
+    log(`  ✗ Codex sandbox 차단 감지 — Tier 1/2 모두 이 세션에서 재시도 불가 → 티어 3(Playwright MCP) 에 위임`);
   } else {
     log(`  ✗ 티어 1+2 모두 실패 → 티어 3(MCP) 필요`);
   }

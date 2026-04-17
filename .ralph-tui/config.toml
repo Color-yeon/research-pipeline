@@ -14,7 +14,30 @@ configVersion = "2.1"
 # 400 에러가 매 iteration 마다 나서 파이프라인이 1~2초만에 끝나버린다.
 # 특정 모델을 강제하고 싶다면 이 저장소를 fork 한 쪽에서 설정하거나,
 # `ralph-tui run --model ...` 같은 CLI 플래그로 넘겨라.
+
+# --- Claude 에이전트 전용 ---
 dangerouslySkipPermissions = true
+
+# --- Codex 에이전트 전용 ---
+# 이 파이프라인은 본질적으로 외부 네트워크(OpenAlex / Semantic Scholar / arXiv /
+# Unpaywall API) 와 헤드리스 브라우저(Playwright Chromium) 에 의존한다.
+# Codex 의 기본 sandbox(workspace-write) 는 두 가지를 모두 차단해
+# Tier 1(DNS ENOTFOUND) / Tier 2(Chromium Mach port Permission denied) 가 전멸한다.
+#
+# 따라서 Codex 로 돌릴 때는 sandbox 를 "danger-full-access" 로 완화한다.
+# Ralph-tui 의 codex plugin 이 buildArgs() 에서 이 값을 읽어
+# `codex exec --json --sandbox danger-full-access -` 로 띄운다.
+#
+# ⚠ 보안 주의: 이 설정은 Codex 가 사용자 머신에서 파일·네트워크·서브프로세스를
+# 제약 없이 실행할 수 있게 한다. 반드시 다음 조건에서만 사용하라:
+#   - 본인 소유 머신이고
+#   - 연구 주제 자체가 신뢰할 수 있으며 (프롬프트 인젝션 노출 적음)
+#   - 파이프라인 산출물(findings/)을 혼자 보는 경우
+# 팀·CI·공용 머신에서는 sandbox = "workspace-write" (기본) 를 쓰고,
+# 대신 Claude Code agent(--agent claude) 로 전환하는 것을 권장한다.
+# 자세한 내용은 README.md "Codex 실행 시 보안 모델" 섹션 참조.
+sandbox = "danger-full-access"
+fullAuto = true
 
 [trackerOptions]
 path = "./prd.json"

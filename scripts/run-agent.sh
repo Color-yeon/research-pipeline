@@ -41,6 +41,22 @@ if [ "${CLAUDE_SAFE_MODE:-0}" != "1" ]; then
     CLAUDE_FLAGS+=(--dangerously-skip-permissions)
 fi
 
+# ── Codex 세이프 모드 옵트아웃 ───────────────────────────────────────
+# Codex 기본 sandbox(--full-auto = workspace-write)는 외부 API DNS 와
+# Playwright Chromium launch 를 모두 차단해 Tier 1/2 전문 수집이 실패한다.
+# 이 파이프라인은 본질적으로 네트워크·브라우저를 요구하므로, 기본값을
+# --dangerously-bypass-approvals-and-sandbox 로 잡고 CODEX_SAFE_MODE=1
+# 로만 표준 sandbox 로 되돌릴 수 있게 한다.
+# ⚠ 보안 주의: README.md "Codex 실행 시 보안 모델" 참조.
+CODEX_FLAGS=()
+if [ "${CODEX_SAFE_MODE:-0}" = "1" ]; then
+    # 안전 모드: 표준 sandbox. Tier 1/2 는 실패하지만 Tier 3(Playwright MCP) 로 우회됨.
+    CODEX_FLAGS+=(--full-auto)
+else
+    # 기본 모드: sandbox 완전 해제. 네트워크·브라우저 전면 허용.
+    CODEX_FLAGS+=(--dangerously-bypass-approvals-and-sandbox)
+fi
+
 # ── 에이전트별 대화형 실행 ───────────────────────────────────────────
 #
 # intake-prompt-<mode>.md 전체를 "초기 유저 메시지"로 주입하면 Codex UI 에
@@ -80,9 +96,9 @@ run_interactive() {
                 # 너무 길거나 지시투로 적힌 원문을 유저 메시지로 노출하지 않는다.
                 # 대신 스킬을 호출하라는 한 줄만 넣는다. 스킬 본문(.codex/skills/
                 # research-intake/SKILL.md)이 이후 모든 대화 흐름을 안내한다.
-                exec codex "$trigger"
+                exec codex "${CODEX_FLAGS[@]}" "$trigger"
             else
-                exec codex
+                exec codex "${CODEX_FLAGS[@]}"
             fi
             ;;
 
@@ -119,8 +135,11 @@ run_exec() {
             echo "▶ Codex exec 실행 중 — 상세 로그: $log_file" >&2
             echo "  (에이전트가 스킬을 따라 작업하는 동안 기다려 주세요. 보통 1~3분)" >&2
 
+            # CODEX_FLAGS 에 이미 --full-auto 또는
+            # --dangerously-bypass-approvals-and-sandbox 가 들어 있으므로
+            # 여기서는 중복 지정하지 않는다.
             local rc=0
-            codex exec --full-auto --color never \
+            codex exec "${CODEX_FLAGS[@]}" --color never \
                 -o "$last_msg" \
                 "$prompt" >"$log_file" 2>&1 || rc=$?
 
