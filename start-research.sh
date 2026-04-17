@@ -167,7 +167,9 @@ fi
 # 현재 쉘의 AGENT 가 없으면 .env 의 값을 먼저 읽어 본다.
 AGENT_FROM_ENV_FILE=""
 if [ -z "${AGENT:-}" ] && [ -f "$PROJECT_DIR/.env" ]; then
-    AGENT_FROM_ENV_FILE="$(grep -E '^AGENT=' "$PROJECT_DIR/.env" 2>/dev/null | head -n 1 | cut -d'=' -f2-)"
+    # grep 이 매치 못하면 exit 1 → pipefail + set -e 로 스크립트가 조용히 종료되므로
+    # `|| true` 로 파이프 실패를 흡수해야 한다 (.env 에 AGENT= 라인이 없는 게 정상 케이스).
+    AGENT_FROM_ENV_FILE="$(grep -E '^AGENT=' "$PROJECT_DIR/.env" 2>/dev/null | head -n 1 | cut -d'=' -f2- || true)"
     AGENT_FROM_ENV_FILE="${AGENT_FROM_ENV_FILE//\"/}"
     AGENT_FROM_ENV_FILE="${AGENT_FROM_ENV_FILE//\'/}"
 fi
@@ -202,7 +204,8 @@ if [ -z "${AGENT:-}" ]; then
         AGENT_CHOICE=""
         while [ -z "$AGENT_CHOICE" ]; do
             read -r -p "어떤 에이전트로 진행할까요? [1-3, 기본=1] " AGENT_INPUT </dev/tty || AGENT_INPUT=""
-            AGENT_INPUT="${AGENT_INPUT,,}"
+            # macOS 기본 bash 3.2 는 ${VAR,,} (소문자 변환) 을 지원하지 않으므로 tr 로 대체한다.
+            AGENT_INPUT="$(printf '%s' "$AGENT_INPUT" | tr '[:upper:]' '[:lower:]')"
             case "${AGENT_INPUT:-1}" in
                 1|codex)   AGENT_CHOICE="codex" ;;
                 2|claude)  AGENT_CHOICE="claude" ;;

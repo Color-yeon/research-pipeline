@@ -131,7 +131,8 @@ parse_reset_hour_from_log() {
     fi
 
     # 시간 추출 (예: "resets 6am" → 6, "resets 2pm" → 14, "resets 12:30pm" → 12)
-    reset_hour=$(echo "$reset_str" | grep -o '[0-9]*' | head -1)
+    # set -e + pipefail 환경이라 grep 미스매치 시 sentinel 전체가 조용히 죽지 않도록 `|| true` 로 흡수.
+    reset_hour=$(echo "$reset_str" | grep -o '[0-9]*' | head -1 || true)
 
     if echo "$reset_str" | grep -q "pm" && [ "$reset_hour" -ne 12 ]; then
         reset_hour=$(( reset_hour + 12 ))
