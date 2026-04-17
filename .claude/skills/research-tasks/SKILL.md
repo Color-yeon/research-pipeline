@@ -5,6 +5,25 @@ description: "연구 설정(research-config.json)을 기반으로 Ralph TUI용 p
 
 # Ralph TUI 태스크 자동 생성
 
+## 0단계: 선행 조건 검사
+
+이 스킬을 실행하기 전에 **반드시** 아래 명령을 Bash 도구로 실행하라.
+
+```bash
+node scripts/lib/pipeline-guard.mjs research-tasks
+```
+
+- exit 0 → 통과. 다음 단계로 진행한다.
+- exit code 가 0 이 아니면 → stderr 의 사유를 사용자에게 그대로 보고하고
+  **실행을 즉시 중단**하라. `prd.json` 은 사용자가 승인한 연구 설정
+  (`research-config.json` + `findings/_intake_approved.json`)을 기반으로만
+  생성되어야 한다. 인테이크를 거치지 않은 상태에서 태스크를 만들면 파이프라인
+  전체가 잘못된 방향으로 돌아간다.
+
+Claude Code 에서는 `.claude/settings.json` 의 PreToolUse 훅이 같은 검사를
+이벤트 수준에서 추가로 수행한다. 하지만 Codex·Gemini 경로에서는 이 명령이
+유일한 방어선이다.
+
 ## 인자
 
 `$ARGUMENTS`: 연구 모드 지정

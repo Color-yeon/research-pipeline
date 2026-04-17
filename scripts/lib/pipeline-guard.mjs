@@ -29,12 +29,29 @@ import { fileURLToPath } from 'url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = join(__dirname, '..', '..');
 const FINDINGS_DIR = join(PROJECT_ROOT, 'findings');
+const CONFIG_PATH = join(PROJECT_ROOT, 'research-config.json');
+const INTAKE_APPROVED_PATH = join(FINDINGS_DIR, '_intake_approved.json');
+const INTAKE_IN_PROGRESS_PATH = join(FINDINGS_DIR, '_intake_in_progress.json');
 
 /**
  * 가드 조건 매트릭스 — scripts/hooks/pipeline-guard.mjs 와 의도적으로 동일.
  * 한 쪽을 고치면 다른 쪽도 맞춰야 한다.
  */
 export const GUARD_MATRIX = {
+  'research-search': {
+    check: () => hasConfig() && hasIntakeApproved(),
+    message:
+      'research-config.json 이 없거나, 인테이크 승인 센티넬(findings/_intake_approved.json) 이 없습니다.\n' +
+      '주제/키워드를 사용자와 확정하지 않은 상태에서 검색을 시작하면, 엉뚱한 방향으로 논문을 모으게 됩니다.\n' +
+      '반드시 /research-intake 를 먼저 실행하여 사용자와 대화로 설정을 확정한 뒤 /research-search 를 호출하세요.',
+  },
+  'research-tasks': {
+    check: () => hasConfig() && hasIntakeApproved(),
+    message:
+      'research-config.json 이 없거나, 인테이크 승인 센티넬(findings/_intake_approved.json) 이 없습니다.\n' +
+      'prd.json 은 사용자가 승인한 연구 설정을 기반으로 생성되어야 합니다.\n' +
+      '먼저 /research-intake 로 설정을 확정하세요.',
+  },
   'research-credibility': {
     check: () => hasMinEvidenceCards(1),
     message: 'findings/ 디렉토리에 증거카드 파일이 없습니다.\n먼저 /research-search 로 논문을 검색하세요.',
@@ -113,6 +130,29 @@ export function hasMinEvidenceCards(minCount) {
  */
 export function hasFile(filename) {
   return existsSync(join(FINDINGS_DIR, filename));
+}
+
+/**
+ * research-config.json 존재 여부.
+ */
+export function hasConfig() {
+  return existsSync(CONFIG_PATH);
+}
+
+/**
+ * 인테이크 승인 센티넬(findings/_intake_approved.json) 존재 여부.
+ * /research-intake 스킬이 사용자 확인을 받은 뒤 기록한다.
+ */
+export function hasIntakeApproved() {
+  return existsSync(INTAKE_APPROVED_PATH);
+}
+
+/**
+ * 인테이크가 진행 중(중간 상태)인지. intake-in-progress 마커가 있으면 true.
+ * 이 플래그는 Write 가드가 research-config.json 의 정식 생성을 허용할 때 사용한다.
+ */
+export function hasIntakeInProgress() {
+  return existsSync(INTAKE_IN_PROGRESS_PATH);
 }
 
 /**
