@@ -373,12 +373,22 @@ cat findings/_active_task_research.json   # current active task (Stop hook)
 
 ### F. Switching agents
 
+If none of `--agent`, the `AGENT` environment variable, or `AGENT=` in `.env` is set, the script **interactively asks** you to pick one at startup (default choice: `codex`). Pin it in any of the three ways below if you want to skip the prompt.
+
 ```bash
-./start-research.sh deep --agent claude           # default
+# 1) One-off flag
 ./start-research.sh deep --agent codex
+./start-research.sh deep --agent claude
 ./start-research.sh deep --agent gemini
-AGENT=codex ./start-research.sh run               # override .env AGENT for this run only
+
+# 2) Override per invocation via env
+AGENT=codex ./start-research.sh run
+
+# 3) Persist a default (no prompt again)
+echo "AGENT=codex" >> .env
 ```
+
+Resolution order: **`--agent` > env `AGENT` > `.env` AGENT > interactive prompt**. Non-interactive runs (CI / piped stdin) fall back to `claude` when nothing is set.
 
 > ⚠️ You cannot switch agents mid-session via `resume` — Ralph pins the agent at session start. Start a new `deep`/`trend` run instead.
 
@@ -487,12 +497,22 @@ cat findings/_active_task_research.json   # 현재 활성 태스크 추적(Stop 
 
 ### F. 에이전트 전환
 
+`--agent` / `AGENT` 환경변수 / `.env` 의 `AGENT=` 중 아무것도 지정되어 있지 않으면 스크립트 시작 시 **대화형으로 에이전트를 고르게** 됩니다(기본 선택지는 `codex`). 매번 묻지 않게 하려면 셋 중 하나로 고정하세요.
+
 ```bash
-./start-research.sh deep --agent claude           # 기본값
+# 1) 일회성 플래그
 ./start-research.sh deep --agent codex
+./start-research.sh deep --agent claude
 ./start-research.sh deep --agent gemini
-AGENT=codex ./start-research.sh run               # .env 의 AGENT를 이번 실행만 덮어쓰기
+
+# 2) 이번 실행만 환경변수로 덮어쓰기
+AGENT=codex ./start-research.sh run
+
+# 3) 기본값을 저장 (매 실행에 묻지 않기)
+echo "AGENT=codex" >> .env
 ```
+
+선택 우선순위: **`--agent` > 환경변수 `AGENT` > `.env` 의 `AGENT=` > 대화형 선택**. 비대화형(CI/파이프)에서는 아무것도 없을 때 `claude` 로 자동 폴백합니다.
 
 > ⚠️ 진행 중인 Ralph 세션을 `resume`하는 도중에는 에이전트를 바꿀 수 없습니다(세션이 시작될 때의 에이전트로 고정). 바꾸려면 새로 `deep`/`trend` 로 시작하세요.
 
