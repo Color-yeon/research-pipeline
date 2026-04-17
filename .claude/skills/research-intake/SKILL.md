@@ -10,17 +10,34 @@ description: "연구 문헌조사 파이프라인의 인테이크 스킬. 사용
 사용자와 대화하여 연구 주제, 키워드, 하위 질문을 확정하고 `research-config.json` 파일을 생성한다.
 이 설정 파일은 이후 `research-search`, `research-read` 등 다른 스킬의 입력으로 사용된다.
 
-## 0단계: 인테이크 시작 마커 기록 (필수)
+## 0단계: 기존 승인 확인 + 시작 마커 기록 (필수)
 
-스킬이 실제로 작동을 시작하기 전에 **반드시** 아래 Bash 명령을 한 번 실행하라.
+스킬이 실제로 작동을 시작하기 전에 **반드시** 아래 Bash 명령을 실행하라.
 
 ```bash
+# 1) 이미 승인된 인테이크가 있으면 덮어쓰지 않는다.
+#    사용자가 Phase 1(/research-tasks) 중에 실수로 이 스킬을 재호출하거나,
+#    Codex 가 혼란으로 다시 인테이크를 시작했을 때 _intake_approved.json 을
+#    _intake_in_progress.json 으로 덮어버리는 사고가 반복됐다 (2026-04-17).
+#    승인이 이미 있으면 즉시 스킬을 종료하고 사용자에게 그대로 알린다.
+if [ -f findings/_intake_approved.json ]; then
+  echo ""
+  echo "⚠ 이미 승인된 인테이크가 있습니다 (findings/_intake_approved.json)."
+  echo "  새 주제로 다시 시작하려면 ./start-research.sh 를 종료하고"
+  echo "  'node scripts/lib/project-archive.mjs archive --reason new-topic' 로"
+  echo "  기존 작업을 archive/ 로 보존한 뒤 ./start-research.sh deep 을 다시 실행하세요."
+  echo ""
+  echo "지금은 이 스킬을 종료합니다. 인테이크를 다시 하지 마세요."
+  exit 0
+fi
+
+# 2) 승인이 없는 정상 경로 — 진행 마커를 만들고 대화를 시작한다.
 mkdir -p findings && node -e "const fs=require('fs');fs.writeFileSync('findings/_intake_in_progress.json', JSON.stringify({started_at: new Date().toISOString(), tool: 'research-intake'}, null, 2))"
 ```
 
-이 파일(`findings/_intake_in_progress.json`)은 파이프라인 가드에게 "지금 인테이크 대화가 진행 중"임을 알리는 마커다. 이 마커가 없는 상태에서 에이전트가 `research-config.json`을 직접 쓰려고 하면 Write 가드가 차단한다.
-
-마커를 만든 뒤에야 사용자와 대화를 시작하라.
+**중요한 해석 규칙**:
+- 위 명령이 `이미 승인된 인테이크가 있습니다` 메시지를 출력하며 `exit 0` 으로 끝나면, 절대 **다시 실행하지 말고** 사용자에게 해당 상황을 그대로 전달한 뒤 스킬을 완전히 종료하라. `research-config.json` 이나 `_intake_in_progress.json` 을 어떤 방법으로도 만들지 마라.
+- 그 외에 명령이 정상적으로 완료됐다면 (= 승인이 없던 상태) `findings/_intake_in_progress.json` 이 생성된다. 이 마커가 없는 상태에서 에이전트가 `research-config.json` 을 직접 쓰려고 하면 Write 가드가 차단한다. 마커를 만든 뒤에야 사용자와 대화를 시작하라.
 
 ## 입력 ($ARGUMENTS)
 
@@ -116,9 +133,31 @@ trend 모드:
 
 파일 경로: `/Users/goomba/dev/research-pipeline/research-config.json`
 
+## 설정 파일 생성 직후: 종료 안내 메시지 (필수)
+
+`research-config.json` 을 Write 로 생성한 직후, 사용자에게 **정확히 아래 블록을 그대로 한국어로 출력하라**. 임의로 줄여 쓰지 말고, "다음 단계" 를 네가 직접 실행하지도 마라. 이 문구가 없으면 사용자는 어떻게 파이프라인을 이어가야 할지 알 수 없다.
+
+```
+✓ research-config.json 생성이 완료되었습니다.
+
+다음 단계는 자동으로 이어집니다:
+  • 이 채팅을 **Ctrl+C** (또는 `/exit`) 로 종료해 주세요.
+  • 종료 즉시 `./start-research.sh` 가 이어받아
+    - Phase 1: `/research-tasks` 를 실행해 `prd.json` 을 자동 생성하고,
+    - Phase 2: Ralph 무인 실행으로 문헌조사를 시작합니다.
+
+추가로 수정하거나 보완할 내용이 있다면 **Ctrl+C 누르기 전에** 지금 말씀해 주세요.
+더 지시하실 내용이 없다면 Ctrl+C 로 이 창을 닫아 주세요.
+```
+
+주의:
+- 네가 스스로 `/research-tasks` 나 `/research-search` 를 호출하면 안 된다. 인테이크 세션의 유일한 출구는 사용자의 Ctrl+C 이다. 뒤 단계는 `start-research.sh` 가 **새 에이전트 세션** 에서 띄운다.
+- "오케이", "좋아요" 같은 짧은 동의만 돌아와도 **"Ctrl+C 로 종료해 주세요"** 라고 한 번 더 안내하라. 사용자가 종료 방법을 모르고 다음 지시를 기다리고 있을 수 있다.
+- 아직 승인 센티넬을 기록하지 않았다면 이 안내 메시지를 내보내고 난 뒤 아래 마무리 단계를 실행하라.
+
 ## 마무리 단계: 인테이크 승인 센티넬 기록 (필수)
 
-`research-config.json`을 Write로 생성한 뒤 사용자에게 최종 확인 메시지를 보여주었다면, **반드시** 아래 Bash 명령을 실행하여 승인 센티넬을 기록하고 시작 마커를 제거하라.
+위 종료 안내 메시지를 출력한 뒤, **반드시** 아래 Bash 명령을 실행하여 승인 센티넬을 기록하고 시작 마커를 제거하라.
 
 ```bash
 node -e "

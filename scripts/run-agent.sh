@@ -42,6 +42,16 @@ if [ "${CLAUDE_SAFE_MODE:-0}" != "1" ]; then
 fi
 
 # ── 에이전트별 대화형 실행 ───────────────────────────────────────────
+#
+# intake-prompt-<mode>.md 전체를 "초기 유저 메시지"로 주입하면 Codex UI 에
+# 길고 기계적인 지시문이 사용자가 친 것처럼 그대로 뿌려진다 (2026-04-17 사고).
+# Claude 의 `--append-system-prompt` 는 시스템 영역으로 들어가 UI 에 안 보이지만,
+# Codex CLI 에는 동등한 비노출 주입 기능이 없다.
+#
+# 해결 전략: 상세 지시문 원문은 .codex/skills/research-intake/ 에 이미 복사되어
+# 있으므로, Codex 에는 **스킬을 바로 호출하라는 아주 짧은 트리거 메시지만**
+# 유저 메시지로 주입한다. 긴 지시서는 스킬 SKILL.md 가 담당한다.
+# 파일명에서 모드(deep/trend)를 추출해 올바른 슬래시 커맨드를 주입한다.
 run_interactive() {
     local sys_prompt_file="$1"
 
@@ -56,12 +66,21 @@ run_interactive() {
             ;;
 
         codex)
-            # Codex CLI는 AGENTS.md 를 자동 로드하므로 베이스 컨텍스트는 이미 주어진다.
-            # 추가 인테이크 지시서는 `codex [PROMPT]` 위치 인자로 초기 유저 메시지에
-            # 직접 주입한다 — 사용자에게 원문을 노출하지 않고 에이전트가 바로 처리한다.
-            # (`codex --help` 의 `[PROMPT]  Optional user prompt to start the session`)
+            # 스크립트 파일명(intake-prompt-deep.md / intake-prompt-trend.md)에서
+            # 모드를 추출해 `/research-intake <mode>` 형태의 트리거를 만든다.
+            # 실패 시 모드 미지정으로 호출 — 스킬이 사용자에게 모드를 물어본다.
             if [ -n "$sys_prompt_file" ] && [ -f "$sys_prompt_file" ]; then
-                exec codex "$(cat "$sys_prompt_file")"
+                local base mode trigger
+                base="$(basename "$sys_prompt_file" .md)"  # intake-prompt-deep
+                mode="${base#intake-prompt-}"              # deep / trend
+                case "$mode" in
+                    deep|trend) trigger="/research-intake $mode" ;;
+                    *)          trigger="/research-intake" ;;
+                esac
+                # 너무 길거나 지시투로 적힌 원문을 유저 메시지로 노출하지 않는다.
+                # 대신 스킬을 호출하라는 한 줄만 넣는다. 스킬 본문(.codex/skills/
+                # research-intake/SKILL.md)이 이후 모든 대화 흐름을 안내한다.
+                exec codex "$trigger"
             else
                 exec codex
             fi
@@ -75,8 +94,18 @@ run_interactive() {
 }
 
 # ── 에이전트별 일회성 실행 ───────────────────────────────────────────
+# Codex exec 은 기본적으로 agentic 과정(모든 bash 호출과 결과, 스킬 본문,
+# 파일 읽기 결과 등)을 stdout 에 그대로 쏟아내 사용자 터미널을 오염시킨다.
+# 이 래퍼에서는 그 raw 출력을 로그 파일로 리다이렉트하고, 에이전트의 최종
+# 응답만 --output-last-message 로 분리해 간결히 보여 준다.
+# Claude 쪽은 -p 플래그가 이미 non-interactive 출력을 깔끔히 내 주므로
+# 기존 동작을 유지한다.
 run_exec() {
     local prompt="$1"
+    local log_dir="$PROJECT_DIR/logs"
+    mkdir -p "$log_dir"
+    local ts
+    ts="$(date +%Y%m%d-%H%M%S)"
 
     case "$AGENT" in
         claude)
@@ -84,8 +113,36 @@ run_exec() {
             ;;
 
         codex)
-            # Codex CLI 의 non-interactive 실행
-            exec codex exec --full-auto "$prompt"
+            local log_file="$log_dir/codex-exec-${ts}.log"
+            local last_msg="$log_dir/codex-exec-${ts}-last.txt"
+
+            echo "▶ Codex exec 실행 중 — 상세 로그: $log_file" >&2
+            echo "  (에이전트가 스킬을 따라 작업하는 동안 기다려 주세요. 보통 1~3분)" >&2
+
+            local rc=0
+            codex exec --full-auto --color never \
+                -o "$last_msg" \
+                "$prompt" >"$log_file" 2>&1 || rc=$?
+
+            # 최종 응답만 깔끔히 노출 — 이 블록이 사용자에게 실제로 보이는 Phase 결과다.
+            if [ -f "$last_msg" ] && [ -s "$last_msg" ]; then
+                echo ""
+                echo "─── 에이전트 최종 응답 ─────────────────────────────"
+                cat "$last_msg"
+                echo "────────────────────────────────────────────────────"
+                echo ""
+            fi
+
+            if [ "$rc" -ne 0 ]; then
+                echo "✗ Codex exec 실패 (exit $rc)" >&2
+                echo "  상세 로그: $log_file" >&2
+                echo "  (마지막 50줄을 참고용으로 표시합니다)" >&2
+                tail -n 50 "$log_file" >&2 || true
+            fi
+
+            # run-agent.sh 는 start-research.sh 가 spawn 하는 서브쉘이므로
+            # exec 대신 exit 로 종료 코드를 caller 에게 그대로 전달한다.
+            exit "$rc"
             ;;
 
         *)

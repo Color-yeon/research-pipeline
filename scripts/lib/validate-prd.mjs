@@ -9,12 +9,18 @@
  * 태스크 0개로 즉시 종료되는 상황을 방지한다.
  *
  * 사용 방법:
- *   - 모듈: import { validatePrd } from './lib/validate-prd.mjs'
+ *   - 모듈: import { validatePrd, sanitizePrd } from './lib/validate-prd.mjs'
  *   - CLI : node scripts/lib/validate-prd.mjs [prd.json]
  *           exit 0 = 통과, exit 1 = 스키마 위반, exit 2 = 파일 없음/IO 오류
+ *   - 자동 청소 CLI:
+ *           node scripts/lib/validate-prd.mjs --fix [prd.json]
+ *           → 금지 필드(status/subtasks/estimated_hours/files) 를 제거하고
+ *             status 값을 passes 로 매핑한 뒤 원본 파일을 덮어쓴다.
+ *             exit 0 = 청소 후 스키마 통과 / exit 1 = 청소해도 통과 불가
+ *             (name 누락처럼 구조적 문제는 자동 수정 대상이 아니다)
  */
 
-import { existsSync, readFileSync } from 'fs';
+import { existsSync, readFileSync, writeFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 
 // ralph-tui 가 prd.json 에 허용하지 않는 필드 목록.
@@ -99,6 +105,66 @@ export function validatePrd(filePath) {
 }
 
 /**
+ * prd.json 을 "ralph-tui 가 받아줄 수 있는 최소 스키마"로 자동 청소한다.
+ *
+ * 하는 일:
+ *   - userStories[].status → passes 로 매핑 후 status 필드 삭제
+ *       ("pending"/"in_progress" 등 → false, "completed"/"done" → true)
+ *   - userStories[].{subtasks, estimated_hours, files} 필드 삭제
+ *   - passes 가 여전히 없으면 false 로 채움
+ * 하지 않는 일:
+ *   - id/title/name 같은 필수 필드 누락은 복구하지 않는다 (의미 판단 불가)
+ *
+ * @param {object} obj - JSON.parse 된 prd.json 객체
+ * @returns {{changed: boolean, removedFields: string[], passesFilled: number}}
+ */
+export function sanitizePrd(obj) {
+  const removedFields = new Set();
+  let changed = false;
+  let passesFilled = 0;
+
+  if (!Array.isArray(obj?.userStories)) {
+    return { changed, removedFields: [], passesFilled };
+  }
+
+  const COMPLETED_VALUES = new Set(['completed', 'done', 'complete', 'passed', 'passes']);
+
+  for (const s of obj.userStories) {
+    if (typeof s !== 'object' || s === null) continue;
+
+    // status → passes 매핑 (기존 passes 가 없을 때만 유추한다)
+    if ('status' in s) {
+      if (typeof s.passes !== 'boolean') {
+        const v = typeof s.status === 'string' ? s.status.toLowerCase() : '';
+        s.passes = COMPLETED_VALUES.has(v);
+        passesFilled += 1;
+      }
+      delete s.status;
+      removedFields.add('status');
+      changed = true;
+    }
+
+    // 단순 삭제 필드
+    for (const f of ['subtasks', 'estimated_hours', 'files']) {
+      if (f in s) {
+        delete s[f];
+        removedFields.add(f);
+        changed = true;
+      }
+    }
+
+    // passes 가 여전히 없으면 false (신규 태스크로 간주)
+    if (typeof s.passes !== 'boolean') {
+      s.passes = false;
+      passesFilled += 1;
+      changed = true;
+    }
+  }
+
+  return { changed, removedFields: [...removedFields], passesFilled };
+}
+
+/**
  * 검증 결과를 사람이 읽기 좋은 문자열로 포매팅한다.
  */
 export function formatValidationResult(result, filePath) {
@@ -124,7 +190,49 @@ export function formatValidationResult(result, filePath) {
 // CLI 모드 진입점
 const isMain = process.argv[1] === fileURLToPath(import.meta.url);
 if (isMain) {
-  const filePath = process.argv[2] || 'prd.json';
+  // 옵션과 파일 경로 분리 (순서 무관)
+  const args = process.argv.slice(2);
+  const fixMode = args.includes('--fix');
+  const filePath = args.find((a) => !a.startsWith('--')) || 'prd.json';
+
+  if (fixMode) {
+    // 자동 청소 모드: status/subtasks/estimated_hours/files 를 제거하고
+    // 가능한 필드를 복구한 뒤 파일을 덮어쓴다.
+    if (!existsSync(filePath)) {
+      console.error(`✗ 파일이 존재하지 않습니다: ${filePath}`);
+      process.exit(2);
+    }
+    let obj;
+    try {
+      obj = JSON.parse(readFileSync(filePath, 'utf8'));
+    } catch (e) {
+      console.error(`✗ JSON 파싱 실패: ${e.message}`);
+      process.exit(2);
+    }
+
+    const { changed, removedFields, passesFilled } = sanitizePrd(obj);
+
+    if (changed) {
+      // 2-space 들여쓰기로 재기록 (프로젝트 컨벤션)
+      writeFileSync(filePath, JSON.stringify(obj, null, 2) + '\n');
+      console.log(`✓ prd.json 자동 청소 완료 — ${filePath}`);
+      if (removedFields.length > 0) {
+        console.log(`  제거된 필드: ${removedFields.join(', ')}`);
+      }
+      if (passesFilled > 0) {
+        console.log(`  passes 필드 채움/매핑: ${passesFilled}건`);
+      }
+    } else {
+      console.log(`· 자동 청소 대상 필드 없음 — ${filePath}`);
+    }
+
+    // 청소 후 재검증
+    const result = validatePrd(filePath);
+    console.log('');
+    console.log(formatValidationResult(result, filePath));
+    process.exit(result.valid ? 0 : 1);
+  }
+
   const result = validatePrd(filePath);
   console.log(formatValidationResult(result, filePath));
 

@@ -203,16 +203,27 @@ log "Rate limit 폴백 리셋 시간: 오전 ${FALLBACK_RESET_HOUR}시"
 # ralph-tui 가 stricter 한 스키마 검증을 하므로(status 필드 금지 등),
 # 위반이 있으면 Ralph 가 "Total tasks: 0" 으로 즉시 종료되어 파이프라인이 사실상 실행되지 않는다.
 # 여기서 먼저 잡아 명확한 에러 메시지와 함께 중단하는 편이 훨씬 낫다.
+#
+# 자동 청소 전략:
+#   1차 검증에서 실패하면 `--fix` 로 금지 필드(status/subtasks/estimated_hours/files) 자동 제거 시도.
+#   청소 후 재검증 통과 시 진행 (원본은 이미 에이전트가 생성한 것이므로 내용 손실 없음).
+#   청소로도 해결 불가(name 누락 등 구조적 오류) 시에만 중단한다.
+#   이 루프는 에이전트(특히 Claude)가 습관적으로 `status: "pending"` 을 넣는 실수를
+#   사용자에게 "다시 돌리세요"로 떠넘기지 않고 파이프라인 안에서 흡수한다.
 if [ -f "$PRD_FILE" ]; then
     log "prd.json 스키마 검증 중..."
     if node "$PROJECT_DIR/scripts/lib/validate-prd.mjs" "$PRD_FILE" 2>&1 | tee -a "$SENTINEL_LOG"; then
         log "✓ prd.json 스키마 검증 통과"
     else
-        log "❌ prd.json 스키마 검증 실패 — Sentinel 을 중단합니다."
-        log "   ralph-tui 는 이 prd.json 을 거부하므로 Ralph 실행은 무의미합니다."
-        log "   위 오류 메시지를 참고해 prd.json 을 고친 뒤 ./start-research.sh run 으로 재시도하세요."
-        log "=== Sentinel 종료 (prd.json 스키마 오류) ==="
-        exit 2
+        log "⚠ prd.json 스키마 검증 실패 — 자동 청소(--fix) 를 시도합니다."
+        if node "$PROJECT_DIR/scripts/lib/validate-prd.mjs" --fix "$PRD_FILE" 2>&1 | tee -a "$SENTINEL_LOG"; then
+            log "✓ prd.json 자동 청소 후 스키마 검증 통과 — Ralph 실행을 계속합니다."
+        else
+            log "❌ 자동 청소로도 해결 불가 — Sentinel 을 중단합니다."
+            log "   위 오류 메시지를 참고해 prd.json 을 고친 뒤 ./start-research.sh run 으로 재시도하세요."
+            log "=== Sentinel 종료 (prd.json 스키마 오류) ==="
+            exit 2
+        fi
     fi
 else
     log "❌ prd.json 이 존재하지 않습니다: $PRD_FILE"
