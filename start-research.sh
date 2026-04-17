@@ -371,7 +371,12 @@ if [ ! -f "$INTAKE_PROMPT" ]; then
 fi
 cd "$PROJECT_DIR"
 echo "에이전트($AGENT_DISPLAY)와 대화하여 연구 주제를 설정합니다."
-echo "대화가 끝나면 /exit 또는 Ctrl+C로 종료하세요."
+echo ""
+echo "▶ 대화 종료 방법:"
+echo "  에이전트가 research-config.json 생성을 알리고, 더 지시하실 내용이"
+echo "  없다면 Ctrl+C(또는 /exit)를 눌러 대화를 종료하세요."
+echo "  종료 즉시 Phase 1(태스크 자동 생성)과 Phase 2(Ralph 무인 실행)가"
+echo "  자동으로 이어집니다."
 echo ""
 bash "$SCRIPTS_DIR/run-agent.sh" interactive --system-prompt "$INTAKE_PROMPT"
 
