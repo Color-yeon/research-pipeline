@@ -261,6 +261,14 @@ while true; do
     fi
 
     # 정상 종료 확인
+    #
+    # 중요: Ralph TUI 는 "exit code 0" 으로 끝나도 실제로는 완료가 아닌 경우가 있다.
+    #   (A) 사용자 Ctrl+C → graceful shutdown → exit 0 + status: "interrupted"
+    #   (B) prd.json 스키마 거부 → totalTasks:0 으로 즉시 종료 → exit 0 + tasksCompleted:0
+    # 과거에 exit 0 만 보고 "✅ 모든 태스크 완료" 라고 찍어서, 실제로는 단 한 태스크도
+    # 진행되지 않았는데 사용자에게 성공 메시지를 주는 사고가 반복됐다 (2026-04-17).
+    # session-meta.json 의 status / totalTasks / tasksCompleted 를 함께 확인해 실제로 완료됐는지
+    # 판정한다.
     if [ "$EXIT_CODE" -eq 0 ]; then
         # Rate limit 또는 미완료 태스크 확인
         if check_rate_limit || check_incomplete; then
@@ -288,7 +296,38 @@ while true; do
             continue
         fi
 
-        log "✅ Ralph 정상 종료. 모든 태스크 완료."
+        # session-meta.json 로 실제 종료 상태 검증
+        local_meta="$PROJECT_DIR/.ralph-tui/session-meta.json"
+        if [ -f "$local_meta" ]; then
+            meta_status=$(node -e "try{console.log(JSON.parse(require('fs').readFileSync('$local_meta','utf8')).status||'')}catch(e){}" 2>/dev/null || echo "")
+            meta_total=$(node -e "try{console.log(JSON.parse(require('fs').readFileSync('$local_meta','utf8')).totalTasks||0)}catch(e){console.log(0)}" 2>/dev/null || echo "0")
+            meta_done=$(node -e "try{console.log(JSON.parse(require('fs').readFileSync('$local_meta','utf8')).tasksCompleted||0)}catch(e){console.log(0)}" 2>/dev/null || echo "0")
+
+            log "   session-meta 판정: status=${meta_status}, tasks=${meta_done}/${meta_total}"
+
+            # Ralph 가 interrupted 로 마감됐거나, totalTasks 자체가 0 이면 "완료" 라고 선언하지 않는다.
+            if [ "$meta_status" = "interrupted" ]; then
+                log "⚠ Ralph 가 interrupted 상태로 종료됐습니다 (graceful shutdown). 실제 완료 아님."
+                log "   재실행이 필요하면 ./start-research.sh run 또는 ./start-research.sh resume 으로 이어가세요."
+                break
+            fi
+            if [ "$meta_total" = "0" ]; then
+                log "⚠ Ralph 가 totalTasks=0 으로 종료됐습니다. prd.json 이 비정상이거나 이미 모든 passes=true 인 상태."
+                log "   prd.json 의 passes 필드와 userStories 를 확인하세요."
+                break
+            fi
+            if [ "$meta_done" != "$meta_total" ]; then
+                log "⚠ 완료된 태스크가 전체보다 적습니다 (${meta_done}/${meta_total}). interrupted 아닌데 완료 선언은 보류."
+                log "   재시도하려면 ./start-research.sh run 으로 다시 실행하세요."
+                break
+            fi
+
+            log "✅ Ralph 정상 종료. 모든 태스크 완료 (${meta_done}/${meta_total})."
+            break
+        fi
+
+        # session-meta.json 이 없으면 (Ralph 가 너무 빨리 끝나서 못 쓴 경우 등) 보수적으로 표시
+        log "⚠ Ralph 가 exit 0 으로 끝났으나 session-meta.json 이 없어 실제 완료 여부를 확정할 수 없습니다."
         break
     fi
 
