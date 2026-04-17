@@ -164,3 +164,69 @@ echo ""
 echo "✓ 프록시 설정을 .env 파일에 저장했습니다."
 echo "  파일: $ENV_FILE (chmod 600 — 소유자 전용)"
 echo "  추가 API 키(SEMANTIC_SCHOLAR_API_KEY 등)는 .env.example을 참고하여 직접 추가하세요."
+
+# ─────────────────────────────────────────────────────────────
+# Notion MCP 설정 (선택)
+# ─────────────────────────────────────────────────────────────
+# Phase 8 의 /research-notion 스킬이 결과를 노션 DB/페이지로 기록한다.
+# 이를 위해 Notion integration token 과 부모 페이지 ID 가 필요하다.
+# 이미 설정돼 있거나 사용자가 건너뛰면 이 블록은 아무 일도 하지 않는다.
+NOTION_TOKEN_CUR="$(read_env_value NOTION_TOKEN)"
+NOTION_PARENT_CUR="$(read_env_value NOTION_PARENT_PAGE_ID)"
+
+if [ -z "$NOTION_TOKEN_CUR" ] || [ -z "$NOTION_PARENT_CUR" ] || [ "$FORCE" = "--force" ]; then
+    cat <<'EOF'
+
+────────────────────────────────────────
+ Notion MCP 초기 설정 (선택)
+────────────────────────────────────────
+
+Phase 8 에서 `/research-notion` 스킬이 연구 결과를 노션 데이터베이스/
+페이지로 기록합니다. 사용하려면 다음 두 가지가 필요합니다:
+
+  1) Notion Integration Token
+     https://www.notion.so/profile/integrations 에서 "New integration"
+     으로 생성한 뒤, 생성된 Internal Integration Token (ntn_... 또는
+     secret_... 으로 시작) 을 복사해 두세요.
+
+  2) 부모 페이지 ID
+     결과를 담을 Notion 페이지를 하나 만들고, 해당 페이지 우측 상단의
+     "..." → "Connect to" 에서 방금 만든 Integration 을 연결합니다.
+     페이지 URL 의 마지막 32자(하이픈 포함 가능)가 Page ID 입니다.
+
+노션 기록이 필요 없으면 그냥 Enter 로 건너뛰세요. (나중에 추가하려면
+bash scripts/setup-proxy.sh --force 로 재실행하거나 .env 에 직접
+NOTION_TOKEN, NOTION_PARENT_PAGE_ID 를 추가하면 됩니다.)
+
+EOF
+    read -r -p "노션 MCP 를 설정하시겠습니까? (y/N): " SETUP_NOTION
+    if [[ "$SETUP_NOTION" =~ ^[Yy] ]]; then
+        read -r -s -p "NOTION_TOKEN (ntn_ 또는 secret_ 으로 시작): " NOTION_TOKEN_INPUT
+        echo ""
+        while [ -z "$NOTION_TOKEN_INPUT" ]; do
+            read -r -s -p "비어있을 수 없습니다. NOTION_TOKEN: " NOTION_TOKEN_INPUT
+            echo ""
+        done
+
+        read -r -p "NOTION_PARENT_PAGE_ID (하이픈 있어도/없어도 OK): " NOTION_PARENT_INPUT
+        while [ -z "$NOTION_PARENT_INPUT" ]; do
+            read -r -p "비어있을 수 없습니다. NOTION_PARENT_PAGE_ID: " NOTION_PARENT_INPUT
+        done
+
+        # 하이픈 제거해서 32자 bare ID 로 정규화 (Notion API 는 양쪽 다 받지만 일관성 위해)
+        NOTION_PARENT_INPUT="$(echo "$NOTION_PARENT_INPUT" | tr -d '-' | tr -d ' ')"
+
+        write_env_value "NOTION_TOKEN" "$NOTION_TOKEN_INPUT"
+        write_env_value "NOTION_PARENT_PAGE_ID" "$NOTION_PARENT_INPUT"
+
+        echo ""
+        echo "✓ Notion 설정을 .env 에 저장했습니다 (chmod 600, 커밋 안 됨)."
+        echo ""
+        echo "▸ 실제 MCP 연결:"
+        echo "  - Claude Code 사용자가 이미 연결한 Notion 커넥터가 있다면 그대로 쓰면 됩니다."
+        echo "  - 없는 경우, .mcp.json 에 포함된 notion 서버 엔트리가 이 NOTION_TOKEN 을 읽어"
+        echo "    다음 세션부터 자동으로 Notion MCP 도구(mcp__notion-*)를 제공합니다."
+    else
+        echo "Notion MCP 설정을 건너뛰었습니다. Phase 8 은 스킵되거나 실패할 수 있습니다."
+    fi
+fi
