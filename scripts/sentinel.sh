@@ -8,7 +8,10 @@ RALPH_BIN="$HOME/.bun/bin/ralph-tui"
 PRD_FILE="$PROJECT_DIR/prd.json"
 LOG_DIR="$PROJECT_DIR/logs"
 SENTINEL_LOG="$LOG_DIR/sentinel.log"
-RALPH_LOG="$LOG_DIR/ralph_run.log"
+# TUI 모드에서는 stdout 이 curses 에 점유되므로 sentinel 이 tee 로 가로챌 수 없다.
+# 대신 ralph-tui 가 기록하는 per-iteration 로그(.ralph-tui/iterations/*.log)를
+# 스캔하여 rate-limit/미완료 신호를 감지한다.
+ITERATIONS_DIR="$PROJECT_DIR/.ralph-tui/iterations"
 
 # ── 에이전트 선택 로드 ─────────────────────────────────────────────
 # start-research.sh 에서 export 된 AGENT 가 우선, 없으면 .env 에서 읽고,
@@ -22,9 +25,9 @@ if [ -z "${AGENT:-}" ] && [ -f "$PROJECT_DIR/.env" ]; then
 fi
 AGENT="${AGENT:-claude}"
 case "$AGENT" in
-    claude|codex|gemini) ;;
+    claude|codex) ;;
     *)
-        echo "❌ 지원하지 않는 AGENT 값: '$AGENT' (claude|codex|gemini)" >&2
+        echo "❌ 지원하지 않는 AGENT 값: '$AGENT' (claude|codex)" >&2
         exit 1
         ;;
 esac
@@ -100,30 +103,42 @@ ensure_playwright_profile() {
     fi
 }
 
-# Rate limit 감지: ralph 로그 마지막 100줄에서 rate_limit 확인
-# (Ralph 종료 시 요약 로그가 20줄+ 출력되므로 넉넉하게 100줄)
+# 최근 N 개 iteration 로그의 본문을 합쳐서 표준출력으로 내보낸다.
+# TUI 모드에선 sentinel 이 ralph-tui 의 stdout 을 tee 할 수 없으므로
+# ralph-tui 가 스스로 기록하는 per-iteration 파일에서 신호를 읽어야 한다.
+# 파일명에 타임스탬프가 박혀 있으므로 mtime 기준으로 최신 N 개만 뽑는다.
+recent_iterations_text() {
+    local n="${1:-8}"
+    [ -d "$ITERATIONS_DIR" ] || return 0
+    # shellcheck disable=SC2012 — ls -1t 정렬이 목적이라 그대로 둔다
+    ls -1t "$ITERATIONS_DIR"/*.log 2>/dev/null | head -n "$n" | while IFS= read -r f; do
+        [ -f "$f" ] && cat "$f"
+    done
+}
+
+# Rate limit 감지: 최근 iteration 로그에서 rate_limit 신호 확인
 check_rate_limit() {
-    if [ -f "$RALPH_LOG" ] && tail -100 "$RALPH_LOG" | grep -q "rate_limit\|hit your limit"; then
+    if recent_iterations_text 8 | grep -q "rate_limit\|hit your limit"; then
         return 0  # rate limit 감지됨
     fi
     return 1  # rate limit 아님
 }
 
-# 미완료 태스크 감지: INTERRUPTED 또는 완료 수 < 전체 수
+# 미완료 태스크 감지: 최근 iteration 로그에 INTERRUPTED/Max retries 여부
 check_incomplete() {
-    if [ -f "$RALPH_LOG" ] && tail -30 "$RALPH_LOG" | grep -q "INTERRUPTED\|Skipping.*Max retries"; then
+    if recent_iterations_text 5 | grep -q "INTERRUPTED\|Skipping.*Max retries"; then
         return 0  # 미완료 태스크 있음
     fi
     return 1
 }
 
-# 로그에서 리셋 시간 파싱 (예: "resets 6am", "resets 2pm", "resets 12:30pm")
+# iteration 로그에서 리셋 시간 파싱 (예: "resets 6am", "resets 2pm", "resets 12:30pm")
 # stdout으로 시간(0~23)만 출력한다. 호출자는 종료 코드로 파싱 성공/폴백을 구분한다.
 #   return 0 = 로그에서 실제 리셋 시간을 파싱함
 #   return 1 = 파싱 실패 → FALLBACK_RESET_HOUR 반환 (대기가 예상보다 길 수 있음)
 parse_reset_hour_from_log() {
     local reset_str reset_hour
-    reset_str=$(tail -100 "$RALPH_LOG" 2>/dev/null | grep -o "resets [0-9:]*[ap]m" | tail -1 || echo "")
+    reset_str=$(recent_iterations_text 8 | grep -o "resets [0-9:]*[ap]m" | tail -1 || echo "")
 
     if [ -z "$reset_str" ]; then
         echo "$FALLBACK_RESET_HOUR"
@@ -153,7 +168,7 @@ seconds_until_reset() {
     if [ "$parse_rc" -eq 0 ]; then
         log "   감지된 리셋 시간: 오전/오후 ${reset_hour}시"
     else
-        log "   ⚠ ralph_run.log 에서 'resets Xam/pm' 패턴을 찾지 못해 폴백(오전 ${FALLBACK_RESET_HOUR}시)을 사용합니다."
+        log "   ⚠ iteration 로그에서 'resets Xam/pm' 패턴을 찾지 못해 폴백(오전 ${FALLBACK_RESET_HOUR}시)을 사용합니다."
         log "   ⚠ 실제 리셋 시간과 다르면 대기가 의도보다 길 수 있습니다. Ctrl+C 로 중단 후 FALLBACK_RESET_HOUR 를 조정해 재실행하세요."
     fi
 
@@ -212,18 +227,20 @@ while true; do
     log "Ralph 실행 시작 (시도 $((restart_count + 1))/$MAX_RESTARTS)"
 
     cd "$PROJECT_DIR"
+    # TUI 모드로 foreground 실행 — curses 가 터미널을 점유하므로 tee/pipe 금지.
+    # per-iteration 로그는 ralph-tui 가 .ralph-tui/iterations/ 에 스스로 기록한다.
+    # `set -e` 가 non-zero 종료에 트리거되지 않도록 `|| EXIT_CODE=$?` 로 흡수한다.
+    EXIT_CODE=0
     if [ "$restart_count" -eq 0 ] && [ -z "$session_id" ]; then
         # 첫 실행 — --agent 로 config.toml 의 agent 설정을 명시적으로 override
-        "$RALPH_BIN" run --no-tui --agent "$AGENT" --prd "$PRD_FILE" 2>&1 | tee -a "$RALPH_LOG"
-        EXIT_CODE=${PIPESTATUS[0]}
+        "$RALPH_BIN" run --agent "$AGENT" --prd "$PRD_FILE" || EXIT_CODE=$?
     else
         # 재시작 — resume (세션에 저장된 agent 가 이어짐)
         if [ -n "$session_id" ]; then
-            "$RALPH_BIN" resume "$session_id" 2>&1 | tee -a "$RALPH_LOG"
+            "$RALPH_BIN" resume "$session_id" || EXIT_CODE=$?
         else
-            "$RALPH_BIN" resume 2>&1 | tee -a "$RALPH_LOG"
+            "$RALPH_BIN" resume || EXIT_CODE=$?
         fi
-        EXIT_CODE=${PIPESTATUS[0]}
     fi
 
     # 세션 ID 기록 (다음 resume용)

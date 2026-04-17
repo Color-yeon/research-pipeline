@@ -40,11 +40,11 @@ older fork or clone, please update to the latest commit before reporting.
 
 **범위 안 (in scope):**
 - `scripts/`, `.claude/skills/`, `.claude/settings.json`, `start-research.sh` 등 이 저장소의 코드 자체에서 비롯된 취약점
-- 파이프라인이 외부 도구(Claude Code / Codex / Gemini / Ralph TUI / Playwright) 를 호출할 때, 이 저장소 설정이 권한 경계를 잘못 완화시키는 경우
+- 파이프라인이 외부 도구(Claude Code / Codex / Ralph TUI / Playwright) 를 호출할 때, 이 저장소 설정이 권한 경계를 잘못 완화시키는 경우
 - `.env`, `.playwright-auth.json` 등 로컬 자격 증명 파일을 저장/노출하는 방식에 대한 결함
 
 **범위 밖 (out of scope):**
-- 이 저장소가 의존하는 제3자 도구(Claude Code, OpenAI Codex CLI, Google Gemini CLI, Ralph TUI, Playwright, Notion MCP 등) 자체의 취약점 — 각 프로젝트의 보안 채널로 제보해 주세요.
+- 이 저장소가 의존하는 제3자 도구(Claude Code, OpenAI Codex CLI, Ralph TUI, Playwright, Notion MCP 등) 자체의 취약점 — 각 프로젝트의 보안 채널로 제보해 주세요.
 - 출판사/데이터베이스 이용약관(TDM 정책) 위반에 따른 IP 차단·계정 정지 등 운영상 이슈.
 - `--dangerously-skip-permissions`, `codex exec --full-auto`, `settings.local.json` 의 `"allow": [...]` 확장 등 **사용자가 명시적으로 활성화한 권한 완화**에서 비롯된 피해. 이 모드는 에이전트에 폭넓은 로컬 권한을 부여한다는 사실을 README에서 안내하고 있습니다.
 - 봇 탐지 우회 옵션(`navigator.webdriver` 마스킹, `--disable-blink-features=AutomationControlled` 등)을 본인의 구독/권한 범위 밖에서 사용해 발생한 문제.
@@ -58,11 +58,11 @@ older fork or clone, please update to the latest commit before reporting.
 
 **In scope:**
 - Vulnerabilities originating in this repository's code itself (`scripts/`, `.claude/skills/`, `.claude/settings.json`, `start-research.sh`, etc.).
-- Cases where this repo's configuration wrongly relaxes the permission boundary when invoking external tools (Claude Code / Codex / Gemini / Ralph TUI / Playwright).
+- Cases where this repo's configuration wrongly relaxes the permission boundary when invoking external tools (Claude Code / Codex / Ralph TUI / Playwright).
 - Flaws in how local credentials (`.env`, `.playwright-auth.json`) are stored or exposed.
 
 **Out of scope:**
-- Vulnerabilities in upstream tools this repo depends on — please report those to the respective projects (Claude Code, OpenAI Codex CLI, Google Gemini CLI, Ralph TUI, Playwright, Notion MCP).
+- Vulnerabilities in upstream tools this repo depends on — please report those to the respective projects (Claude Code, OpenAI Codex CLI, Ralph TUI, Playwright, Notion MCP).
 - Operational consequences of violating a publisher/database Terms of Service (TDM policy) — e.g. IP blocks or account suspensions.
 - Damage resulting from user-enabled permission relaxations such as `--dangerously-skip-permissions`, `codex exec --full-auto`, or entries you add to `settings.local.json` under `"allow"`. The README warns that these modes grant broad local capability to the agent.
 - Use of bot-detection-evasion options (e.g. `navigator.webdriver` masking, `--disable-blink-features=AutomationControlled`) outside your own subscription or authorized access.

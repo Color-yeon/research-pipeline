@@ -66,7 +66,6 @@ docs/paper-reader-troubleshooting.md
 # 정본은 .claude/skills/ 한 곳이며, 아래 경로는 sync 결과물이므로
 # 직접 편집하지 말 것. 편집해도 다음 sync에서 덮어쓰여진다.
 .codex/skills/
-.gemini/commands/
 
 # 훅 런타임 데이터 (findings/ 내부이므로 이미 제외되지만 명시)
 # findings/_checkpoint.json

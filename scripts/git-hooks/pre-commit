@@ -4,7 +4,7 @@
 #
 # 원리:
 #   .claude/skills/ 에 staged 변경이 있으면, 커밋 전에 npm run sync-agents 를
-#   실행하여 .codex/skills/ 와 .gemini/commands/ 를 최신 상태로 맞춘다.
+#   실행하여 .codex/skills/ 를 최신 상태로 맞춘다.
 #   파생물은 .gitignore 로 제외되어 있으므로 커밋에 자동 추가되진 않지만,
 #   사용자의 로컬 작업 디렉토리가 항상 정합성을 유지하도록 보장한다.
 #
@@ -26,7 +26,7 @@ if git diff --cached --name-only --diff-filter=ACMR | grep -q '^\.claude/skills/
         printf '[pre-commit] ❌ sync-agent-assets 실패. 수동으로 "npm run sync-agents" 실행 후 다시 커밋하세요.\n' >&2
         exit 1
     fi
-    printf '[pre-commit] ✓ 파생물(.codex/skills/, .gemini/commands/) 갱신 완료\n' >&2
+    printf '[pre-commit] ✓ 파생물(.codex/skills/) 갱신 완료\n' >&2
 fi
 
 exit 0

@@ -21,7 +21,7 @@ node scripts/lib/pipeline-guard.mjs research-search
   확정하라. 검색 키워드를 혼자 추측해서 진행하면 안 된다.
 
 Claude Code 에서는 `.claude/settings.json` 의 PreToolUse 훅이 같은 검사를
-이벤트 수준에서 추가로 수행한다. 하지만 Codex·Gemini 경로에서는 이 명령이
+이벤트 수준에서 추가로 수행한다. 하지만 Codex 경로에서는 이 명령이
 유일한 방어선이다.
 
 ## 왜 완전한 커버리지가 중요한가
@@ -226,7 +226,7 @@ Snowball 추적의 상세 절차는 `<skill-dir>/docs/search-strategy.md` 참조
 ## 종료 단계: 커버리지 자가 검증 + 체크포인트 저장
 
 검색을 마치기 직전에 **반드시** 아래 두 명령을 Bash 도구로 실행하라.
-이 두 단계는 Claude Code 의 Stop/PreCompact 훅이 담당하던 보장을 Codex·Gemini
+이 두 단계는 Claude Code 의 Stop/PreCompact 훅이 담당하던 보장을 Codex
 경로에서도 동일하게 유지하기 위한 에이전트 중립 안전망이다.
 
 ### 1) 커버리지 자가 검증

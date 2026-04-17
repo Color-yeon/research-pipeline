@@ -18,8 +18,8 @@
  *
  * ## 설계 메모
  * Claude Code 환경에서는 .claude/settings.json 의 PreToolUse 훅이 같은 로직을
- * 이벤트 레벨에서 더 촘촘히 방어한다. 이 라이브러리는 Codex/Gemini 를 포함한
- * 에이전트 중립 경로용이며, 스킬 본문의 "0단계"에서 Bash 도구로 호출된다.
+ * 이벤트 레벨에서 더 촘촘히 방어한다. 이 라이브러리는 Codex 경로용으로,
+ * 스킬 본문의 "0단계"에서 Bash 도구로 호출된다.
  */
 
 import { existsSync, readdirSync, readFileSync } from 'fs';

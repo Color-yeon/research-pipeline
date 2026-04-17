@@ -1,10 +1,10 @@
 # 연구 자동화 파이프라인 — 에이전트 공용 지침서
 
-이 파일은 Claude Code, OpenAI Codex CLI, Google Gemini CLI 세 가지 에이전트가 공통으로 읽는 프로젝트 지침서이다.
-세 에이전트 모두 본 파이프라인의 연구 에이전트로 동작할 수 있으며, Ralph TUI가 오케스트레이션한다.
+이 파일은 Claude Code, OpenAI Codex CLI 두 가지 에이전트가 공통으로 읽는 프로젝트 지침서이다.
+두 에이전트 모두 본 파이프라인의 연구 에이전트로 동작할 수 있으며, Ralph TUI가 오케스트레이션한다.
 
 > **Claude Code 사용자 안내**: `CLAUDE.md`도 함께 읽어도 동일 내용이다.
-> **Codex / Gemini CLI 사용자 안내**: 이 파일이 정본(正本)이며, `CLAUDE.md`는 Claude 전용 사항이 소폭 추가된 버전이다.
+> **Codex CLI 사용자 안내**: 이 파일이 정본(正本)이며, `CLAUDE.md`는 Claude 전용 사항이 소폭 추가된 버전이다.
 
 ## 첫 행동 규칙 (Hard Rules)
 
@@ -12,7 +12,7 @@
 
 1. **첫 번째이자 유일한 허용 행동은 `/research-intake` 스킬 호출**이다. 키워드를 임의로 추출해서 `research-config.json` 을 쓰지 마라. 사용자와 대화하지 않은 채로 설정을 만드는 것은 파이프라인 위반이다.
 2. **`research-config.json` 은 `/research-intake` 만 생성·수정한다.** Write/Edit 도구로 config 를 직접 만들려 하면 (Claude Code 훅 또는 각 스킬의 0단계 검사에서) 차단된다. 정상 경로는 인테이크가 `findings/_intake_in_progress.json` 마커를 켠 뒤 config 를 쓰고, 마지막에 `findings/_intake_approved.json` 센티넬을 기록하는 흐름이다.
-3. **인테이크 승인 전에 `node scripts/fetch-paper.js`, `node scripts/read-paper.js` 를 실행하지 마라.** Claude Code 에서는 Bash 훅 가드가 차단하고, Codex/Gemini 에서는 `/research-search` 의 0단계 `pipeline-guard.mjs` 호출이 차단한다. 논문 전문 수집은 반드시 `/research-search` 내부에서만 일어난다.
+3. **인테이크 승인 전에 `node scripts/fetch-paper.js`, `node scripts/read-paper.js` 를 실행하지 마라.** Claude Code 에서는 Bash 훅 가드가 차단하고, Codex 에서는 `/research-search` 의 0단계 `pipeline-guard.mjs` 호출이 차단한다. 논문 전문 수집은 반드시 `/research-search` 내부에서만 일어난다.
 4. **엔트리포인트는 `./start-research.sh` 이다.** 이 진입점을 쓰지 않고 에이전트 CLI 를 저장소에서 직접 띄우면 인테이크 프롬프트 주입·자동 아카이빙·센티넬 감시가 전부 빠진다. 즉석에서 시작된 세션에서는 반드시 첫 행동으로 `/research-intake` 를 호출하라.
 5. **WebSearch / WebFetch 는 DOI·출판처 확인용**이다. 인테이크를 마치지 않은 상태에서 키워드로 논문을 긁어모으는 용도로 쓰면 안 된다. 논문 탐색은 이미 인테이크가 끝난 뒤 `/research-search` 스킬 안에서 일어난다.
 
@@ -37,7 +37,6 @@
 |---------|-------------|------|
 | Claude Code | `.claude/skills/<name>/SKILL.md` | 정본 (Git에 커밋) |
 | Codex CLI | `.codex/skills/<name>/SKILL.md` | 자동 파생 (`.gitignore`) |
-| Gemini CLI | `.gemini/commands/<name>.toml` | 자동 파생 (`.gitignore`) |
 
 **사람이 편집하는 파일은 `.claude/skills/` 하나뿐이다.** 나머지는 `npm run sync-agents`로 재생성된다.
 
@@ -60,7 +59,7 @@
 | `/research-deep-read` | 6개 렌즈 병렬 정독 |
 | `/research-compare` | 논문 간 교차 비교 |
 
-세 에이전트 모두 슬래시 커맨드로 위 스킬을 호출한다.
+두 에이전트 모두 슬래시 커맨드로 위 스킬을 호출한다.
 
 ## 논문 전문 접근
 
@@ -74,7 +73,7 @@
 ## 자동화 훅 — 에이전트별 취급
 
 Claude Code 사용 시에는 `.claude/settings.json`에 등록된 훅들이 추가로 동작한다(PreCompact 체크포인트, Stop verify-fix, PreToolUse pipeline-guard, PreToolUse search-wisdom-pretool).
-Codex / Gemini 사용 시에는 훅이 호출되지 않으므로, 같은 품질 보장을 위해 훅 로직의 핵심을 **스킬 본문의 0단계(선행조건 검사)**와 **prd.json의 검증 태스크(verify-fix 대체)**로 이식해 두었다. 따라서 어느 에이전트로 돌려도 동일한 커버리지·순서 보장이 유지된다.
+Codex 사용 시에는 훅이 호출되지 않으므로, 같은 품질 보장을 위해 훅 로직의 핵심을 **스킬 본문의 0단계(선행조건 검사)**와 **prd.json의 검증 태스크(verify-fix 대체)**로 이식해 두었다. 따라서 어느 에이전트로 돌려도 동일한 커버리지·순서 보장이 유지된다.
 
 자세한 내용은 `CLAUDE.md`의 "자동화 훅" 섹션 참조.
 
