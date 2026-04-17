@@ -1,12 +1,15 @@
 #!/bin/bash
-# 도서관 EZproxy 초기 설정 스크립트
+# 도서관 EZproxy + Notion MCP 초기 설정 스크립트
 #
-# .env 파일이 없거나 PROXY_BASE_URL이 비어있을 때 대화형으로 .env를 생성한다.
-# 이미 설정이 완료되어 있으면 아무 일도 하지 않고 즉시 종료한다.
+# .env 파일이 없거나 각 섹션의 필수 값이 비어있을 때 대화형으로 .env를 생성한다.
+# 각 섹션(EZproxy, Notion)은 독립적으로 판정하며, 이미 설정된 섹션은 건너뛰고
+# 누락된 섹션만 물어본다. 즉 처음 프록시만 입력했던 사용자가 나중에 다시
+# 돌려도 Notion 섹션까지 도달한다.
 #
 # 사용법:
-#   bash scripts/setup-proxy.sh         # 자동 감지 (이미 설정되어 있으면 스킵)
-#   bash scripts/setup-proxy.sh --force # 강제로 재설정
+#   bash scripts/setup-proxy.sh               # 자동 감지 (누락 섹션만 질문)
+#   bash scripts/setup-proxy.sh --force       # 모든 섹션 강제로 다시 질문
+#   bash scripts/setup-proxy.sh --notion-only # 프록시는 건드리지 않고 Notion 섹션만
 
 set -euo pipefail
 
@@ -16,6 +19,11 @@ ENV_FILE="$PROJECT_DIR/.env"
 ENV_EXAMPLE="$PROJECT_DIR/.env.example"
 
 FORCE="${1:-}"
+NOTION_ONLY=""
+if [ "$FORCE" = "--notion-only" ]; then
+    NOTION_ONLY="1"
+    FORCE=""
+fi
 
 # .env에서 키 값 읽기 (대상 키가 없으면 빈 문자열)
 read_env_value() {
@@ -51,17 +59,25 @@ write_env_value() {
 PROXY_ENABLED_CUR="$(read_env_value PROXY_ENABLED)"
 PROXY_BASE_URL_CUR="$(read_env_value PROXY_BASE_URL)"
 
-if [ "$FORCE" != "--force" ]; then
+# 프록시 섹션을 실행할지 결정.
+# --notion-only → 프록시 섹션 스킵
+# 이미 설정되어 있고 --force 아님 → 스킵 (단, exit 하지 않고 Notion 섹션으로 계속 진행)
+RUN_PROXY_SECTION=1
+if [ "$NOTION_ONLY" = "1" ]; then
+    echo "ℹ --notion-only: 프록시 섹션을 건너뛰고 Notion 설정으로 바로 이동합니다."
+    RUN_PROXY_SECTION=0
+elif [ "$FORCE" != "--force" ]; then
     if [ "$PROXY_ENABLED_CUR" = "false" ]; then
-        echo "✓ 프록시 비활성 모드(.env: PROXY_ENABLED=false) — 설정 단계 스킵"
-        exit 0
-    fi
-    if [ -n "$PROXY_BASE_URL_CUR" ]; then
-        echo "✓ EZproxy 설정이 이미 존재합니다(.env: PROXY_BASE_URL)"
-        echo "  재설정하려면: bash scripts/setup-proxy.sh --force"
-        exit 0
+        echo "✓ 프록시 비활성 모드(.env: PROXY_ENABLED=false) — 프록시 섹션 스킵"
+        RUN_PROXY_SECTION=0
+    elif [ -n "$PROXY_BASE_URL_CUR" ]; then
+        echo "✓ EZproxy 설정이 이미 존재합니다(.env: PROXY_BASE_URL) — 프록시 섹션 스킵"
+        echo "  프록시를 재설정하려면: bash scripts/setup-proxy.sh --force"
+        RUN_PROXY_SECTION=0
     fi
 fi
+
+if [ "$RUN_PROXY_SECTION" = "1" ]; then
 
 cat <<'EOF'
 
@@ -85,7 +101,8 @@ if [[ "$USE_PROXY" =~ ^[Nn] ]]; then
     echo ""
     echo "✓ PROXY_ENABLED=false 로 설정했습니다. 오픈액세스 논문만 시도합니다."
     echo "  나중에 프록시를 추가하려면: bash scripts/setup-proxy.sh --force"
-    exit 0
+    # exit 0 을 제거 — Notion 섹션까지 계속 진행
+    RUN_PROXY_SECTION=0
 fi
 
 cat <<'EOF'
@@ -164,6 +181,8 @@ echo ""
 echo "✓ 프록시 설정을 .env 파일에 저장했습니다."
 echo "  파일: $ENV_FILE (chmod 600 — 소유자 전용)"
 echo "  추가 API 키(SEMANTIC_SCHOLAR_API_KEY 등)는 .env.example을 참고하여 직접 추가하세요."
+
+fi  # end of RUN_PROXY_SECTION
 
 # ─────────────────────────────────────────────────────────────
 # Notion MCP 설정 (선택)
