@@ -10,6 +10,18 @@ description: "연구 문헌조사 파이프라인의 인테이크 스킬. 사용
 사용자와 대화하여 연구 주제, 키워드, 하위 질문을 확정하고 `research-config.json` 파일을 생성한다.
 이 설정 파일은 이후 `research-search`, `research-read` 등 다른 스킬의 입력으로 사용된다.
 
+## 0단계: 인테이크 시작 마커 기록 (필수)
+
+스킬이 실제로 작동을 시작하기 전에 **반드시** 아래 Bash 명령을 한 번 실행하라.
+
+```bash
+mkdir -p findings && node -e "const fs=require('fs');fs.writeFileSync('findings/_intake_in_progress.json', JSON.stringify({started_at: new Date().toISOString(), tool: 'research-intake'}, null, 2))"
+```
+
+이 파일(`findings/_intake_in_progress.json`)은 파이프라인 가드에게 "지금 인테이크 대화가 진행 중"임을 알리는 마커다. 이 마커가 없는 상태에서 에이전트가 `research-config.json`을 직접 쓰려고 하면 Write 가드가 차단한다.
+
+마커를 만든 뒤에야 사용자와 대화를 시작하라.
+
 ## 입력 ($ARGUMENTS)
 
 `$ARGUMENTS`로 연구 모드를 받는다:
@@ -103,6 +115,30 @@ trend 모드:
 ```
 
 파일 경로: `/Users/goomba/dev/research-pipeline/research-config.json`
+
+## 마무리 단계: 인테이크 승인 센티넬 기록 (필수)
+
+`research-config.json`을 Write로 생성한 뒤 사용자에게 최종 확인 메시지를 보여주었다면, **반드시** 아래 Bash 명령을 실행하여 승인 센티넬을 기록하고 시작 마커를 제거하라.
+
+```bash
+node -e "
+const fs=require('fs');
+const crypto=require('crypto');
+const cfg=fs.readFileSync('research-config.json');
+const hash=crypto.createHash('sha256').update(cfg).digest('hex');
+const parsed=JSON.parse(cfg.toString());
+fs.writeFileSync('findings/_intake_approved.json', JSON.stringify({
+  approved_at: new Date().toISOString(),
+  config_sha256: hash,
+  config_path: 'research-config.json',
+  mode: parsed.mode,
+  keywords: parsed.keywords || []
+}, null, 2));
+try { fs.unlinkSync('findings/_intake_in_progress.json'); } catch (e) {}
+"
+```
+
+이 센티넬은 이후 `/research-search`, `/research-tasks`, `fetch-paper.js` 같은 후속 단계가 인테이크 통과 여부를 확인할 때 사용된다. 센티넬 없이 후속 단계를 실행하면 파이프라인 가드가 차단한다.
 
 ## 주의사항
 

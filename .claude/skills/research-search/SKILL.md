@@ -5,6 +5,25 @@ description: "다중 소스 논문 검색 + 즉시 전문 수집 스킬. WebSear
 
 # 논문 검색 스킬
 
+## 0단계: 선행 조건 검사
+
+이 스킬을 실행하기 전에 **반드시** 아래 명령을 Bash 도구로 실행하라.
+
+```bash
+node scripts/lib/pipeline-guard.mjs research-search
+```
+
+- exit 0 → 통과. 다음 단계로 진행한다.
+- exit code 가 0 이 아니면 → stderr 의 사유를 사용자에게 그대로 보고하고
+  **실행을 즉시 중단**하라. 이 스킬은 `research-config.json` 과 인테이크 승인 센티넬
+  (`findings/_intake_approved.json`)이 모두 있어야만 실행할 수 있다. 없으면
+  반드시 `/research-intake` 를 먼저 실행하여 사용자와 대화로 주제/키워드를
+  확정하라. 검색 키워드를 혼자 추측해서 진행하면 안 된다.
+
+Claude Code 에서는 `.claude/settings.json` 의 PreToolUse 훅이 같은 검사를
+이벤트 수준에서 추가로 수행한다. 하지만 Codex·Gemini 경로에서는 이 명령이
+유일한 방어선이다.
+
 ## 왜 완전한 커버리지가 중요한가
 
 이 검색 결과는 최종적으로 사용자가 자신의 논문을 작성하는 근거가 된다.

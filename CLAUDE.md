@@ -3,6 +3,18 @@
 이 프로젝트는 Ralph TUI가 오케스트레이션하는 자동 연구 문헌조사 파이프라인이다.
 Claude Code가 연구 에이전트로 동작하며, 아래 원칙을 **반드시** 준수해야 한다.
 
+## 첫 행동 규칙 (Hard Rules)
+
+사용자가 "X를 연구해줘", "Y 동향 조사해줘" 류의 연구 의뢰를 새로 던지면, 다음 규칙이 **무조건** 적용된다. 이 규칙은 추측으로 우회할 수 없다.
+
+1. **첫 번째이자 유일한 허용 행동은 `/research-intake` 스킬 호출**이다. 키워드를 임의로 추출해서 `research-config.json`을 쓰지 마라. 사용자와 대화하지 않은 채로 설정을 만드는 것은 파이프라인 위반이다.
+2. **`research-config.json`은 `/research-intake` 만 생성·수정한다.** Write/Edit 도구로 config 를 직접 만들려 하면 PreToolUse 가드가 차단한다. 정상 경로는 인테이크가 `findings/_intake_in_progress.json` 마커를 켠 뒤 config 를 쓰고, 마지막에 `findings/_intake_approved.json` 센티넬을 기록하는 흐름이다.
+3. **인테이크 승인 전에 `node scripts/fetch-paper.js`, `node scripts/read-paper.js` 를 실행하지 마라.** Bash 가드가 이를 차단한다. 논문 전문 수집은 `/research-search` 안에서만 일어난다.
+4. **엔트리포인트는 `./start-research.sh` 이다.** 이 진입점을 쓰지 않고 에이전트 CLI(Claude Code / Codex / Gemini)를 저장소에서 직접 띄우면 인테이크 프롬프트 주입·자동 아카이빙·센티넬 감시가 전부 빠진다. 즉석에서 시작된 세션에서는 반드시 첫 행동으로 `/research-intake` 를 호출하라.
+5. **WebSearch 와 WebFetch 는 DOI/출판처 확인용**이다. 인테이크를 마치지 않은 상태에서 키워드로 논문을 긁어모으는 용도로 쓰면 안 된다. 논문 탐색은 이미 인테이크가 끝난 뒤 `/research-search` 스킬 안에서 일어난다.
+
+이 규칙은 2026-04-17 Codex 가 사용자 의뢰("DNN 과 drug discovery 연구")를 받고 대화 없이 config 를 날조한 뒤 WebSearch + `fetch-paper.js` 로 바로 전문 수집을 시도한 사고를 계기로 도입됐다. 어느 에이전트든 같은 실수를 반복해선 안 된다.
+
 ## 핵심 원칙과 그 이유
 
 1. **완전한 문헌 커버리지** — 이 결과로 사용자가 자신의 논문을 작성한다. 관련 논문을 하나라도 놓치면 novelty 주장이 무너지고, 리뷰어가 "이 논문은 왜 고려하지 않았는가"라고 지적하는 순간 논문의 신뢰도가 급격히 떨어진다. 그래서 상위 결과에서 멈추지 않고 다양한 쿼리와 소스를 조합하여 빈틈을 줄여야 한다.
