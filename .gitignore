@@ -67,6 +67,11 @@ docs/paper-reader-troubleshooting.md
 # 직접 편집하지 말 것. 편집해도 다음 sync에서 덮어쓰여진다.
 .codex/skills/
 
+# Gemini CLI 파생물 — 2026-04-17 "Gemini 지원 제거" (b7dd6bb) 이후
+# 저장소 정책상 지원하지 않는다. 과거에 생성된 .gemini/ 디렉토리가
+# 로컬에 남아 있어도 추적하지 않는다.
+.gemini/
+
 # 훅 런타임 데이터 (findings/ 내부이므로 이미 제외되지만 명시)
 # findings/_checkpoint.json
 # findings/_active_task.json
