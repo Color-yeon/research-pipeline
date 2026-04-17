@@ -8,7 +8,12 @@ progressFile = ".ralph-tui/progress.md"
 configVersion = "2.1"
 
 [agentOptions]
-model = "claude-opus-4-6"
+# 에이전트 모델은 각 CLI(Claude Code / Codex)의 기본값을 따른다.
+# 여기에 Claude 전용 모델명을 고정하면 Codex 로 돌릴 때
+# "claude-opus-4-6 is not supported when using Codex with a ChatGPT account"
+# 400 에러가 매 iteration 마다 나서 파이프라인이 1~2초만에 끝나버린다.
+# 특정 모델을 강제하고 싶다면 이 저장소를 fork 한 쪽에서 설정하거나,
+# `ralph-tui run --model ...` 같은 CLI 플래그로 넘겨라.
 dangerouslySkipPermissions = true
 
 [trackerOptions]
