@@ -10,7 +10,7 @@
  * Claude Code 환경에서는 .claude/settings.json 의 PreCompact 훅
  * (pre-compact-checkpoint.mjs) 이 컨텍스트 압축 직전에 같은 정보를
  * 자동으로 저장한다. 이 라이브러리는 PreCompact 이벤트가 없는
- * Codex/Gemini 경로에서, 각 스킬 종료 시점에 명시적으로 호출되어
+ * Codex 경로에서, 각 스킬 종료 시점에 명시적으로 호출되어
  * 같은 역할을 수행한다.
  *
  * ## 사용법 (CLI)

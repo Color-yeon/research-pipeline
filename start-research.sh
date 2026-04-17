@@ -2,7 +2,7 @@
 # 연구 자동화 파이프라인 — 진입점
 #
 # 사용법:
-#   ./start-research.sh <mode> [--agent <claude|codex|gemini>] [--name <slug>]
+#   ./start-research.sh <mode> [--agent <claude|codex>] [--name <slug>]
 #
 # 모드:
 #   deep            — 심층 참고문헌 조사 (처음부터)
@@ -54,7 +54,7 @@ show_usage() {
   restore <slug>  — 아카이브된 프로젝트를 루트로 복원 (현재 상태는 자동 보존)
 
 옵션:
-  --agent <name>   claude | codex | gemini — 지정하면 이번 실행에 한해 고정.
+  --agent <name>   claude | codex — 지정하면 이번 실행에 한해 고정.
                    미지정이면 AGENT 환경변수 → .env AGENT → 대화형 선택 순으로 결정.
   --name <slug>    deep/trend 에서 새 주제를 시작할 때, 기존 프로젝트를
                    자동 아카이브할 슬러그를 지정 (없으면 첫 키워드에서 자동 생성)
@@ -65,7 +65,7 @@ show_usage() {
   ./start-research.sh deep --name 4d-qsar-pampa-v1   # 기존 작업을 이 이름으로 보존
   ./start-research.sh library
   ./start-research.sh restore 4d-qsar-pampa-v1-20260416-185530
-  AGENT=gemini ./start-research.sh run
+  AGENT=claude ./start-research.sh run
 USAGE
 }
 
@@ -154,11 +154,11 @@ fi
 #      비대화형(파이프/CI)이면 claude 로 폴백한다.
 if [ -n "$AGENT_OVERRIDE" ]; then
     case "$AGENT_OVERRIDE" in
-        claude|codex|gemini)
+        claude|codex)
             export AGENT="$AGENT_OVERRIDE"
             ;;
         *)
-            echo "❌ 지원하지 않는 --agent 값: '$AGENT_OVERRIDE' (claude|codex|gemini)" >&2
+            echo "❌ 지원하지 않는 --agent 값: '$AGENT_OVERRIDE' (claude|codex)" >&2
             exit 1
             ;;
     esac
@@ -176,7 +176,7 @@ fi
 
 if [ -z "${AGENT:-}" ] && [ -n "$AGENT_FROM_ENV_FILE" ]; then
     case "$AGENT_FROM_ENV_FILE" in
-        claude|codex|gemini)
+        claude|codex)
             export AGENT="$AGENT_FROM_ENV_FILE"
             ;;
         *)
@@ -196,22 +196,20 @@ if [ -z "${AGENT:-}" ]; then
         echo "────────────────────────────────────────"
         echo "  1) codex   — OpenAI Codex CLI   (GPT 계열)"
         echo "  2) claude  — Claude Code"
-        echo "  3) gemini  — Google Gemini CLI"
         echo ""
         echo "기본값을 고정하려면 .env 에 AGENT=codex 처럼 적어 두거나,"
         echo "실행 시 --agent <이름> 플래그를 사용하세요."
         echo ""
         AGENT_CHOICE=""
         while [ -z "$AGENT_CHOICE" ]; do
-            read -r -p "어떤 에이전트로 진행할까요? [1-3, 기본=1] " AGENT_INPUT </dev/tty || AGENT_INPUT=""
+            read -r -p "어떤 에이전트로 진행할까요? [1-2, 기본=1] " AGENT_INPUT </dev/tty || AGENT_INPUT=""
             # macOS 기본 bash 3.2 는 ${VAR,,} (소문자 변환) 을 지원하지 않으므로 tr 로 대체한다.
             AGENT_INPUT="$(printf '%s' "$AGENT_INPUT" | tr '[:upper:]' '[:lower:]')"
             case "${AGENT_INPUT:-1}" in
                 1|codex)   AGENT_CHOICE="codex" ;;
                 2|claude)  AGENT_CHOICE="claude" ;;
-                3|gemini)  AGENT_CHOICE="gemini" ;;
                 *)
-                    echo "   '$AGENT_INPUT' 은 지원되지 않습니다. 1/2/3 또는 claude/codex/gemini 중 하나를 입력하세요." >&2
+                    echo "   '$AGENT_INPUT' 은 지원되지 않습니다. 1/2 또는 claude/codex 중 하나를 입력하세요." >&2
                     ;;
             esac
         done
@@ -256,7 +254,6 @@ fi
 case "$AGENT_DISPLAY" in
     claude) require_cli claude "https://claude.com/claude-code" ;;
     codex)  require_cli codex "https://github.com/openai/codex" ;;
-    gemini) require_cli gemini-cli "npm i -g @google/gemini-cli" ;;
 esac
 
 if [ "$missing" -eq 1 ]; then

@@ -9,7 +9,7 @@
  *
  * Claude Code 환경에서는 .claude/settings.json 의 Stop 훅
  * (verify-fix-loop.mjs) 이 같은 로직을 Stop 이벤트 레벨에서 더 촘촘히
- * 방어한다. 이 라이브러리는 Codex/Gemini 등 해당 훅이 없는 에이전트용이다.
+ * 방어한다. 이 라이브러리는 Codex 등 해당 훅이 없는 에이전트용이다.
  *
  * ## 사용법 (CLI)
  *   node scripts/lib/coverage-verifier.mjs "<keyword>"

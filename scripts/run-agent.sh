@@ -13,9 +13,8 @@
 # 환경변수 AGENT 로 사용할 CLI를 지정한다 (.env 에서 로드).
 #   claude  — Anthropic Claude Code CLI
 #   codex   — OpenAI Codex CLI
-#   gemini  — Google Gemini CLI (명령어 `gemini-cli`)
 #
-# 세 에이전트 모두 .claude/skills/ → sync-agent-assets.mjs 파생물 또는
+# 두 에이전트 모두 .claude/skills/ → sync-agent-assets.mjs 파생물 또는
 # AGENTS.md 를 자동으로 로드하므로, 같은 슬래시 커맨드로 동작한다.
 # ─────────────────────────────────────────────────────────────────────
 set -euo pipefail
@@ -58,39 +57,18 @@ run_interactive() {
 
         codex)
             # Codex CLI는 AGENTS.md 를 자동 로드하므로 베이스 컨텍스트는 이미 주어진다.
-            # 추가 시스템 프롬프트가 있으면 화면에 먼저 보여주고 사용자가 대화 첫 턴에
-            # 참조하도록 안내한다(현재 Codex CLI는 대화형 진입 시 --system-prompt
-            # 플래그를 공식 지원하지 않는다. 향후 지원되면 이 분기를 갱신).
+            # 추가 인테이크 지시서는 `codex [PROMPT]` 위치 인자로 초기 유저 메시지에
+            # 직접 주입한다 — 사용자에게 원문을 노출하지 않고 에이전트가 바로 처리한다.
+            # (`codex --help` 의 `[PROMPT]  Optional user prompt to start the session`)
             if [ -n "$sys_prompt_file" ] && [ -f "$sys_prompt_file" ]; then
-                echo "────────────────────────────────────────"
-                echo " 인테이크 지시서 (Codex에 직접 붙여넣어 시작하세요)"
-                echo "────────────────────────────────────────"
-                cat "$sys_prompt_file"
-                echo ""
-                echo "────────────────────────────────────────"
-                echo " 위 내용을 복사해 첫 메시지로 보내거나, \"@${sys_prompt_file}\" 로 참조하세요."
-                echo "────────────────────────────────────────"
-                echo ""
+                exec codex "$(cat "$sys_prompt_file")"
+            else
+                exec codex
             fi
-            exec codex
-            ;;
-
-        gemini)
-            # Gemini CLI 도 GEMINI.md/AGENTS.md 를 자동 로드한다.
-            # 추가 시스템 프롬프트는 @파일경로 구문으로 참조하게 안내한다.
-            if [ -n "$sys_prompt_file" ] && [ -f "$sys_prompt_file" ]; then
-                echo "────────────────────────────────────────"
-                echo " 인테이크 지시서"
-                echo "────────────────────────────────────────"
-                echo "첫 메시지로 다음을 입력하세요:"
-                echo "   @${sys_prompt_file}"
-                echo ""
-            fi
-            exec gemini-cli
             ;;
 
         *)
-            echo "❌ 지원하지 않는 AGENT 값: '$AGENT' (claude|codex|gemini 중 하나여야 합니다)" >&2
+            echo "❌ 지원하지 않는 AGENT 값: '$AGENT' (claude|codex 중 하나여야 합니다)" >&2
             exit 1
             ;;
     esac
@@ -110,13 +88,8 @@ run_exec() {
             exec codex exec --full-auto "$prompt"
             ;;
 
-        gemini)
-            # Gemini CLI 의 non-interactive 실행
-            exec gemini-cli -p "$prompt"
-            ;;
-
         *)
-            echo "❌ 지원하지 않는 AGENT 값: '$AGENT' (claude|codex|gemini 중 하나여야 합니다)" >&2
+            echo "❌ 지원하지 않는 AGENT 값: '$AGENT' (claude|codex 중 하나여야 합니다)" >&2
             exit 1
             ;;
     esac
@@ -163,7 +136,7 @@ case "$MODE" in
   $0 exec "<prompt>"
 
 환경변수 AGENT 값 (.env 또는 shell 에서 설정):
-  claude | codex | gemini
+  claude | codex
   현재: ${AGENT}
 
 예시:

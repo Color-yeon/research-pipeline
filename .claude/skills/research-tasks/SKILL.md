@@ -21,7 +21,7 @@ node scripts/lib/pipeline-guard.mjs research-tasks
   전체가 잘못된 방향으로 돌아간다.
 
 Claude Code 에서는 `.claude/settings.json` 의 PreToolUse 훅이 같은 검사를
-이벤트 수준에서 추가로 수행한다. 하지만 Codex·Gemini 경로에서는 이 명령이
+이벤트 수준에서 추가로 수행한다. 하지만 Codex 경로에서는 이 명령이
 유일한 방어선이다.
 
 ## 인자

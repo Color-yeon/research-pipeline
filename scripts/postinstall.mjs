@@ -4,8 +4,8 @@
  * 프로젝트 postinstall 엔트리
  *
  * `npm install` 시에 순서대로 수행:
- *   1) scripts/sync-agent-assets.mjs 실행 — 에이전트 파생물(.codex/skills/,
- *      .gemini/commands/) 초기 생성/갱신
+ *   1) scripts/sync-agent-assets.mjs 실행 — 에이전트 파생물(.codex/skills/)
+ *      초기 생성/갱신
  *   2) git config core.hooksPath scripts/git-hooks 설정 — pre-commit 등
  *      프로젝트 훅이 자동 활성화되도록 함
  *
