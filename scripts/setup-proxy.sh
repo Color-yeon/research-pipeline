@@ -196,41 +196,124 @@ NOTION_PARENT_CUR="$(read_env_value NOTION_PARENT_PAGE_ID)"
 if [ -z "$NOTION_TOKEN_CUR" ] || [ -z "$NOTION_PARENT_CUR" ] || [ "$FORCE" = "--force" ]; then
     cat <<'EOF'
 
-────────────────────────────────────────
- Notion MCP 초기 설정 (선택)
-────────────────────────────────────────
+════════════════════════════════════════════════════════════════
+ Notion 연동 설정 (선택)
+════════════════════════════════════════════════════════════════
 
-Phase 8 에서 `/research-notion` 스킬이 연구 결과를 노션 데이터베이스/
-페이지로 기록합니다. 사용하려면 다음 두 가지가 필요합니다:
+이 파이프라인의 마지막 단계(Phase 8)에서는 논문 조사 결과를
+자동으로 Notion 페이지에 정리해 줍니다. 사용하려면 아래 두 가지를
+Notion 계정에서 먼저 준비해 주세요. 각 단계별로 어디서 뭘 복사해
+붙여넣어야 하는지 자세히 안내합니다.
 
-  1) Notion Integration Token
-     https://www.notion.so/profile/integrations 에서 "New integration"
-     으로 생성한 뒤, 생성된 Internal Integration Token (ntn_... 또는
-     secret_... 으로 시작) 을 복사해 두세요.
+──────────────────────────────────────────────────────────────
+  ① NOTION_TOKEN — 이게 뭐고 어디서 구하나
+──────────────────────────────────────────────────────────────
 
-  2) 부모 페이지 ID
-     결과를 담을 Notion 페이지를 하나 만들고, 해당 페이지 우측 상단의
-     "..." → "Connect to" 에서 방금 만든 Integration 을 연결합니다.
-     페이지 URL 의 마지막 32자(하이픈 포함 가능)가 Page ID 입니다.
+  Notion이 외부 프로그램(여기선 이 파이프라인)에게 "이 워크스페이스에
+  글을 써도 돼" 라고 허가해 주는 비밀번호 같은 것입니다. "Internal
+  Integration Secret" 이라고 부릅니다.
 
-노션 기록이 필요 없으면 그냥 Enter 로 건너뛰세요. (나중에 추가하려면
-bash scripts/setup-proxy.sh --force 로 재실행하거나 .env 에 직접
-NOTION_TOKEN, NOTION_PARENT_PAGE_ID 를 추가하면 됩니다.)
+  만드는 법 (브라우저에서):
+
+  1. 아래 주소로 이동:
+       https://www.notion.so/profile/integrations
+
+  2. 왼쪽 "+ New integration" 버튼 클릭
+
+  3. 입력값:
+       - Name:         원하는 이름 (예: "research-pipeline")
+       - Type:         "Internal"
+       - Workspace:    결과를 저장할 워크스페이스 선택
+       - Save 버튼 클릭
+
+  4. 생성된 integration 상세 화면에서 "Configuration" 탭을 엽니다.
+     "Internal Integration Secret" 줄 옆에 "Show" 를 눌러 값을
+     복사합니다. 보통 다음처럼 생겼습니다:
+
+       ntn_abcDEF123456...           (최신 형식)
+       secret_abcDEF123456...        (이전 형식)
+
+     → 이 문자열을 잠시 메모장 등에 붙여 두세요.
+
+──────────────────────────────────────────────────────────────
+  ② NOTION_PARENT_PAGE_ID — 결과를 담을 페이지
+──────────────────────────────────────────────────────────────
+
+  이 파이프라인이 논문 DB와 개별 논문 페이지를 만들 때, 그것들이
+  들어갈 "상위(부모) 페이지" 의 ID 입니다. Notion 앱에서 빈 페이지
+  하나를 만들어 두고, 그 페이지를 위에서 만든 Integration 에
+  연결하면 됩니다.
+
+  만드는 법:
+
+  1. Notion 앱/웹에서 새 페이지 하나를 생성합니다.
+     (예: "AI Drug Discovery 문헌조사")
+
+  2. 페이지 우측 상단의 "···" (점 세 개) 클릭
+       → 메뉴에서 "Connections" (또는 "Connect to")
+       → 방금 만든 integration 이름을 검색해서 "Confirm".
+     이 단계를 빼먹으면 API 가 페이지를 찾지 못합니다.
+
+  3. 브라우저 주소창의 URL을 봅니다. 아래처럼 생겼습니다:
+
+       https://www.notion.so/My-Research-abcd1234efgh5678ijkl9012mnop3456
+
+     맨 끝의 32자가 페이지 ID 입니다:
+
+       abcd1234efgh5678ijkl9012mnop3456
+
+     (하이픈이 섞여 있어도 됩니다 — 자동으로 정리됩니다.)
+
+──────────────────────────────────────────────────────────────
+
+아직 준비가 안 됐거나 노션 기록이 필요 없으면 그냥 Enter 로 건너뛰어도
+됩니다. 나중에 이 스크립트를 다시 돌리면 (bash scripts/setup-proxy.sh
+--notion-only) 같은 자리에서 이어 설정할 수 있습니다.
 
 EOF
-    read -r -p "노션 MCP 를 설정하시겠습니까? (y/N): " SETUP_NOTION
+    read -r -p "지금 노션 연동을 설정하시겠습니까? (y/N): " SETUP_NOTION
     if [[ "$SETUP_NOTION" =~ ^[Yy] ]]; then
-        read -r -s -p "NOTION_TOKEN (ntn_ 또는 secret_ 으로 시작): " NOTION_TOKEN_INPUT
+        echo ""
+        echo "① 위 안내의 Integration 상세 화면에서 복사한 Secret을 붙여넣으세요."
+        echo "   (입력값은 화면에 보이지 않습니다 — .env 파일에만 저장됩니다.)"
+        read -r -s -p "   NOTION_TOKEN: " NOTION_TOKEN_INPUT
         echo ""
         while [ -z "$NOTION_TOKEN_INPUT" ]; do
-            read -r -s -p "비어있을 수 없습니다. NOTION_TOKEN: " NOTION_TOKEN_INPUT
+            read -r -s -p "   비어있을 수 없습니다. 다시 입력하세요. NOTION_TOKEN: " NOTION_TOKEN_INPUT
             echo ""
         done
 
-        read -r -p "NOTION_PARENT_PAGE_ID (하이픈 있어도/없어도 OK): " NOTION_PARENT_INPUT
+        echo ""
+        echo "② 부모 페이지의 URL 끝 32자(또는 URL 전체)를 붙여넣으세요."
+        echo "   예: https://www.notion.so/My-Page-abcd1234efgh5678ijkl9012mnop3456"
+        echo "   위 URL이면 'abcd1234efgh5678ijkl9012mnop3456' 부분만 있으면 됩니다."
+        echo "   URL 통째로 붙여넣어도 자동으로 ID만 뽑아냅니다."
+        read -r -p "   NOTION_PARENT_PAGE_ID: " NOTION_PARENT_INPUT
         while [ -z "$NOTION_PARENT_INPUT" ]; do
-            read -r -p "비어있을 수 없습니다. NOTION_PARENT_PAGE_ID: " NOTION_PARENT_INPUT
+            read -r -p "   비어있을 수 없습니다. 다시 입력하세요. NOTION_PARENT_PAGE_ID: " NOTION_PARENT_INPUT
         done
+
+        # URL 을 통째로 붙여넣은 경우 마지막 경로 세그먼트만 추출.
+        # - "https://www.notion.so/My-Page-abcd..." → "My-Page-abcd..."
+        # - query string (?v=..., ?pvs=...) 제거
+        # 그 다음 영숫자가 아닌 모든 문자 제거 (하이픈/슬래시/제목 텍스트 정리)
+        # 결과 문자열의 마지막 32자가 실제 Notion page ID.
+        NOTION_PARENT_RAW="$NOTION_PARENT_INPUT"
+        if [[ "$NOTION_PARENT_INPUT" == *"notion.so/"* ]]; then
+            NOTION_PARENT_INPUT="${NOTION_PARENT_INPUT##*/}"   # 마지막 '/' 이후만
+            NOTION_PARENT_INPUT="${NOTION_PARENT_INPUT%%\?*}"  # '?' 앞까지
+        fi
+        # 하이픈/공백 제거
+        NOTION_PARENT_INPUT="$(echo "$NOTION_PARENT_INPUT" | tr -d '-' | tr -d ' ')"
+        # 맨 뒤 32자만 (제목 글자가 앞에 붙어 있어도 ID만 뽑히도록)
+        if [ "${#NOTION_PARENT_INPUT}" -gt 32 ]; then
+            NOTION_PARENT_INPUT="${NOTION_PARENT_INPUT: -32}"
+        fi
+
+        if [ "${#NOTION_PARENT_INPUT}" -ne 32 ]; then
+            echo "   ⚠ 추출한 ID 길이가 32자가 아닙니다 (입력: '$NOTION_PARENT_RAW' → '$NOTION_PARENT_INPUT')."
+            echo "     그래도 그대로 저장하지만, Phase 8 에서 인증 실패하면 이 값을 확인해 주세요."
+        fi
 
         # 하이픈 제거해서 32자 bare ID 로 정규화 (Notion API 는 양쪽 다 받지만 일관성 위해)
         NOTION_PARENT_INPUT="$(echo "$NOTION_PARENT_INPUT" | tr -d '-' | tr -d ' ')"
