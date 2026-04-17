@@ -126,7 +126,25 @@ function verifyCoverage(activeTask) {
   // findings 파일 찾기
   const findingsFile = findFindingsFile(keyword);
   if (!findingsFile) {
-    gaps.push(`findings 파일을 찾을 수 없습니다 (키워드: ${keyword}).`);
+    // 증거 카드 .md 가 없을 때 — "더 검색하세요" 만 말하면 에이전트가
+    // fetch 만 반복하는 함정에 빠진다 (2026-04-17 실제 사고). 이미 fetch
+    // 결과가 쌓여 있다면 "정리" 단계를 안 거친 상태일 가능성이 크므로,
+    // fetch 결과 유무에 따라 서로 다른 구체적 지시를 내린다.
+    const fetchResults = join(FINDINGS_DIR, '_fetch_results.json');
+    if (existsSync(fetchResults)) {
+      gaps.push(
+        `증거 카드 마크다운이 아직 작성되지 않았습니다 (키워드: ${keyword}). ` +
+        `findings/_fetch_results.json 에 이미 fetch 된 논문 메타데이터가 있으니, ` +
+        `이 데이터와 본문(findings/raw_texts/*)을 근거로 "findings/<키워드-slug>.md" 를 **Write 로 직접 생성**하세요. ` +
+        `추가 검색(fetch-paper.js / WebSearch) 은 이미 충분합니다. 지금 필요한 건 수집된 결과를 ` +
+        `한국어 증거 카드(제목, 저자, DOI, 저널, 연도, 핵심 발견, 방법론 요약)로 정리해 마크다운 파일로 저장하는 것입니다.`
+      );
+    } else {
+      gaps.push(
+        `증거 카드 findings/<키워드-slug>.md 와 fetch 결과(_fetch_results.json) 가 모두 없습니다 (키워드: ${keyword}). ` +
+        `/research-search 스킬 절차대로 다중 소스 검색 + Tier 1/2 전문 수집 + 증거 카드 작성을 끝까지 수행하세요.`
+      );
+    }
     return gaps;
   }
 

@@ -114,6 +114,18 @@ async function runTier1(doi, apiList) {
 // 티어 2: 브라우저 자동화 (read-paper.js 활용)
 // ─────────────────────────────────────────────
 
+// 에러 메시지에서 macOS sandbox(seatbelt) 차단 시그널을 감지한다.
+// Codex CLI 가 --full-auto (workspace-write) 로 돌 때 자식 프로세스인
+// Chromium 이 Mach port rendezvous 생성을 못 해 즉사하는데, 이 때
+// Playwright 가 내뱉는 대표적인 표면 메시지들이다.
+// 이 중 하나라도 보이면 동일 환경에서 다른 Playwright launch 도
+// 실패할 것이므로, 나머지 시도를 포기하고 Tier 3(별도 프로세스인
+// Playwright MCP) 에 위임한다.
+function isSandboxLaunchFailure(errMsg) {
+  if (!errMsg || typeof errMsg !== 'string') return false;
+  return /Target page, context or browser has been closed|mach_port_rendezvous|bootstrap_check_in|Permission denied \(1100\)|MachPortRendezvousServer/i.test(errMsg);
+}
+
 async function runTier2(doi, route) {
   const attempts = [];
   const readPaperMod = require('./read-paper');
@@ -207,6 +219,19 @@ async function runTier2(doi, route) {
     } catch (err) {
       log(`  [티어2] ${method.name}: 오류 — ${err.message}`);
       attempts.push({ tier: 2, source: method.name, error: err.message });
+
+      // Codex/샌드박스 환경에서 Playwright launch 가 즉사하면, 동일 환경의
+      // 나머지 method 도 똑같이 실패한다. 12개 DOI × 3 method × 30s 타임아웃
+      // = 10분을 허공에 날리지 않도록 즉시 루프 탈출해 Tier 3 에 위임한다.
+      if (isSandboxLaunchFailure(err.message)) {
+        log(`  [티어2] sandbox 차단 감지 — 나머지 method 시도를 스킵합니다 (Tier 3 Playwright MCP 로 위임)`);
+        return {
+          success: false,
+          attempts,
+          sandboxBlocked: true,
+          sandboxReason: 'Playwright Chromium launch 가 macOS seatbelt(Codex --full-auto) 에서 차단됨. Tier 3 Playwright MCP 로 재시도 필요.',
+        };
+      }
     } finally {
       if (browser) await browser.close().catch(() => {});
     }
@@ -246,6 +271,8 @@ async function fetchPaper(doi, options = {}) {
   }
 
   // 티어 2: 브라우저
+  let sandboxBlocked = false;
+  let sandboxReason = null;
   if (!options.tier1Only) {
     const tier2 = await runTier2(bareDoi, route);
     if (tier2.success) {
@@ -261,14 +288,26 @@ async function fetchPaper(doi, options = {}) {
       };
     }
     allAttempts.push(...(tier2.attempts || []));
+    if (tier2.sandboxBlocked) {
+      sandboxBlocked = true;
+      sandboxReason = tier2.sandboxReason || null;
+    }
   }
 
   // 모든 티어 실패 → 티어 3 필요
-  log(`  ✗ 티어 1+2 모두 실패 → 티어 3(MCP) 필요`);
+  // sandboxBlocked 인 경우 로그 문구를 구분해, 에이전트가 "네트워크 오류" 가
+  // 아니라 "환경 제약" 임을 알고 Tier 3(MCP) 로 바로 넘어가도록 유도한다.
+  if (sandboxBlocked) {
+    log(`  ✗ 티어 2 sandbox 차단 → 티어 3(Playwright MCP) 에 위임`);
+  } else {
+    log(`  ✗ 티어 1+2 모두 실패 → 티어 3(MCP) 필요`);
+  }
   return {
     success: false,
     doi: bareDoi,
     needsTier3: true,
+    sandboxBlocked,
+    sandboxReason,
     attempts: allAttempts,
     reason: allAttempts[allAttempts.length - 1]?.error || 'unknown',
   };
