@@ -470,12 +470,12 @@ if (require.main === module) {
 
   if (args.length === 0) {
     console.log('사용법:');
-    console.log('  node scripts/fetch-paper.js <DOI>                   # 단일 논문 수집');
-    console.log('  node scripts/fetch-paper.js --batch <파일.json>     # 배치 수집');
-    console.log('  node scripts/fetch-paper.js --tier1-only <DOI>      # API만 시도');
+    console.log('  node scripts/fetch-paper.js <DOI> [<DOI2> ...]      # 단일 또는 다수 DOI 순차 수집');
+    console.log('  node scripts/fetch-paper.js --batch <파일.json>     # JSON 파일 기반 배치 수집');
+    console.log('  node scripts/fetch-paper.js --tier1-only <DOI>...   # API만 시도 (복수 DOI OK)');
+    console.log('  node scripts/fetch-paper.js --tier2-only <DOI>...   # 브라우저만 시도 (복수 DOI OK)');
+    console.log('  node scripts/fetch-paper.js --json <DOI>...         # JSON 출력 (단일=객체, 복수=배열)');
     console.log('  node scripts/fetch-paper.js --status                # 기존 파일 검증');
-    console.log('  node scripts/fetch-paper.js --tier2-only <DOI>      # 브라우저만 시도');
-    console.log('  node scripts/fetch-paper.js --json <DOI>           # JSON 출력 (파싱용)');
     console.log('  node scripts/fetch-paper.js --refetch               # 실패 파일 재수집');
     console.log('  node scripts/fetch-paper.js --refetch --tier1-only  # API로만 재수집');
     process.exit(0);
@@ -497,9 +497,13 @@ if (require.main === module) {
       const jsonPath = args[args.indexOf('--batch') + 1];
       await runBatch(jsonPath, { tier1Only });
     } else {
-      // 단일 DOI
-      const input = args.filter(a => !a.startsWith('--'))[0];
-      if (!input) {
+      // 하나 이상의 DOI를 위치 인자로 받는다.
+      // 과거에는 첫 DOI 만 처리해 에이전트가 `--tier1-only DOI1 DOI2 DOI3 ...`
+      // 로 호출하면 나머지가 조용히 무시됐고, 결국 DOI 별로 셸을 새로 spawn
+      // 하느라 시간을 다 썼다 (2026-04-17 실제 사고). 이제 공백으로 구분된
+      // positional 인자 전체를 순차 처리하고 결과를 배열로 반환한다.
+      const inputs = args.filter((a) => !a.startsWith('--'));
+      if (inputs.length === 0) {
         console.error('오류: DOI를 지정하세요.');
         process.exit(1);
       }
@@ -509,23 +513,61 @@ if (require.main === module) {
       if (tier1Only) options.tier1Only = true;
       if (tier2Only) options.skipTier1 = true;
 
-      const result = await fetchPaper(input, options);
+      const results = [];
+      let sandboxShortCircuit = false;
+      let sandboxReason = null;
 
-      // 단일 DOI 호출도 항상 누적 저장에 반영한다.
-      // 성공/실패 모두 results-store에 머지되어, 다음 호출에서 누적 상태를 볼 수 있다.
-      // --json 모드에서는 stdout이 단일 결과 JSON이므로 saveResults는 silent로 호출.
-      if (result.success) {
-        saveResults([result], [], { silent: jsonOutput });
-      } else {
-        saveResults([], [result], { silent: jsonOutput });
+      for (const input of inputs) {
+        // sandbox 가 한 번이라도 감지되면 동일 환경의 나머지 DOI 도 반드시
+        // 실패한다. 뻘짓하지 않고 즉시 needsTier3 마커만 찍어 결과에 포함한다.
+        if (sandboxShortCircuit) {
+          const bareDoi = input.replace(/^https?:\/\/doi\.org\//, '').trim();
+          results.push({
+            success: false,
+            doi: bareDoi,
+            needsTier3: true,
+            sandboxBlocked: true,
+            sandboxReason,
+            attempts: [],
+            reason: 'skipped — 먼저 DOI 에서 sandbox 차단이 감지돼 같은 세션의 나머지는 자동 스킵',
+          });
+          continue;
+        }
+
+        const r = await fetchPaper(input, options);
+        results.push(r);
+        if (r.sandboxBlocked) {
+          sandboxShortCircuit = true;
+          sandboxReason = r.sandboxReason || '이전 DOI 에서 Codex sandbox 차단 감지';
+        }
+        // 여러 DOI 를 순차 처리할 때 외부 API rate-limit 방지를 위해 짧게 쉰다.
+        if (inputs.length > 1) {
+          await new Promise((res) => setTimeout(res, 400));
+        }
       }
 
-      // --json: 구조화된 JSON 출력 (스킬에서 파싱용)
+      // 누적 저장 — 성공/실패 분리 후 results-store 에 머지
+      const succeeded = results.filter((r) => r.success);
+      const failed = results.filter((r) => !r.success);
+      saveResults(succeeded, failed, { silent: jsonOutput });
+
+      // --json 출력: 여러 DOI 면 배열, 단일 DOI 면 단일 객체 (하위 호환)
       if (jsonOutput) {
-        console.log(JSON.stringify(result, null, 2));
-      } else if (result.success) {
-        log(`\n✓ 완료: ${result.file} (티어 ${result.tier}, ${result.source}, score: ${result.score})`);
+        const out = results.length === 1 ? results[0] : results;
+        console.log(JSON.stringify(out, null, 2));
       } else {
+        for (const r of results) {
+          if (r.success) {
+            log(`✓ ${r.doi}: 티어 ${r.tier}, ${r.source}, score ${r.score}`);
+          } else {
+            log(`✗ ${r.doi}: ${r.reason}`);
+          }
+        }
+        log(`\n=== 합계: 성공 ${succeeded.length} / Tier 3 필요 ${failed.length} ===`);
+      }
+
+      // 모두 실패하면 exit 1, 하나라도 성공하면 exit 0
+      if (succeeded.length === 0) {
         process.exit(1);
       }
     }
