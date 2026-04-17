@@ -103,9 +103,14 @@ function handleStop(event) {
   incrementRetries(activeTask.id);
   const currentRetry = retries + 1;
 
+  // 갭 메시지 본문이 이미 구체적 행동 지시("Write 로 직접 생성하세요",
+  // "추가 쿼리 N개로 검색하세요" 등)를 포함한다. 과거에는 그 뒤에
+  // "누락된 부분을 추가 검색해주세요" 라는 고정 꼬리말이 붙어 있었는데,
+  // "Write 로 작성하라" 는 갭 본문과 정반대 지시로 해석돼 에이전트가
+  // fetch 만 반복하는 함정에 빠졌다 (2026-04-17 실제 사고). 꼬리말을
+  // 제거하고, 갭 본문만 신뢰하도록 정리한다.
   const message = [
     `[커버리지 미비] ${gaps.join(' ')}`,
-    `누락된 부분을 추가 검색해주세요.`,
     `재시도: ${currentRetry}/${MAX_RETRIES}`
   ].join('\n');
 
