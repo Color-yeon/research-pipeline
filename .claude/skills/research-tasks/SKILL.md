@@ -64,20 +64,40 @@ Ralph TUI 형식의 `prd.json`을 생성한다.
 
 ```json
 {
-  "tasks": [
+  "name": "프로젝트 이름",
+  "description": "전체 설명 (선택)",
+  "userStories": [
     {
-      "id": 1,
+      "id": "DEEP-001",
       "title": "태스크 제목",
-      "description": "상세 설명",
-      "status": "pending",
-      "dependencies": [],
-      "priority": "high",
-      "details": "태스크 실행 시 Claude에게 전달될 상세 프롬프트"
-    },
-    ...
+      "description": "Claude에게 전달될 상세 프롬프트",
+      "acceptanceCriteria": ["수용 기준 1", "수용 기준 2"],
+      "passes": false,
+      "priority": 1,
+      "labels": ["search-read", "phase-1"],
+      "dependsOn": []
+    }
   ]
 }
 ```
+
+#### Ralph TUI 스키마 제약 (**반드시 준수**)
+
+`ralph-tui` 바이너리가 prd.json 로딩 시 스키마를 검증하며, 위반 시 `Total tasks: 0`으로 즉시 종료되어 파이프라인이 실행되지 않는다.
+
+**필수 필드 (userStories[] 각각)**
+- `id` (string)
+- `title` (string)
+- `passes` (boolean) — 신규 태스크는 `false`. 이전 세션의 `status: "pending"`에 해당한다.
+
+**금지 필드 — 절대 넣지 마라**
+- `status` — `passes`로 대체됨. (`status: "pending"` → `passes: false`, `status: "completed"` → `passes: true`)
+- `subtasks`
+- `estimated_hours`
+- `files`
+
+**허용되는 필드**
+- `description`, `acceptanceCriteria`, `priority`, `labels`, `dependsOn`, `dependencies`, `notes`, 기타 사용자 정의 필드는 모두 통과한다.
 
 ### 의존성 설정 규칙
 

@@ -81,6 +81,18 @@
           }
         ]
       }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Skill",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node scripts/hooks/validate-prd-post.mjs",
+            "timeout": 5000
+          }
+        ]
+      }
     ]
   },
   "mcpServers": {
