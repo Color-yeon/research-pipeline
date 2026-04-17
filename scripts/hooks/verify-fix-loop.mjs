@@ -10,8 +10,38 @@
  * 훅 이벤트: Stop
  */
 
-import { readFileSync, writeFileSync, existsSync, readdirSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, readdirSync, statSync, unlinkSync } from 'fs';
 import { join } from 'path';
+
+// Ralph 세션이 크래시/강제 종료되면 _active_task_research.json 만 고아로
+// 남아, 이후 이 프로젝트 디렉토리에서 열리는 **모든 Claude Code 세션**이
+// 이 훅에 걸려 Stop 을 차단당한다 (2026-04-17 실제 사고).
+// Ralph 세션 메타가 없거나 "interrupted"/"completed" 상태거나,
+// 마커 자체가 오래됐으면 stale 로 간주해 자동 정리한다.
+const STALE_MARKER_MINUTES = 20;
+function isSessionAlive() {
+  const metaPath = join(PROJECT_ROOT, '.ralph-tui', 'session-meta.json');
+  if (!existsSync(metaPath)) return false;
+  try {
+    const meta = JSON.parse(readFileSync(metaPath, 'utf8'));
+    // "running" / "active" 외 상태(interrupted / completed / failed)는 죽은 세션.
+    if (!meta.status) return false;
+    return /^(running|active|in[-_]?progress)$/i.test(meta.status);
+  } catch {
+    return false;
+  }
+}
+function isMarkerStale(markerPath) {
+  try {
+    const ageMs = Date.now() - statSync(markerPath).mtimeMs;
+    return ageMs > STALE_MARKER_MINUTES * 60 * 1000;
+  } catch {
+    return false;
+  }
+}
+function cleanupStaleMarker(markerPath) {
+  try { unlinkSync(markerPath); } catch { /* 파일이 없으면 그대로 둔다 */ }
+}
 
 const PROJECT_ROOT = join(import.meta.dirname, '..', '..');
 const FINDINGS_DIR = join(PROJECT_ROOT, 'findings');
@@ -45,6 +75,16 @@ function handleStop(event) {
   const reason = event.stop_reason || event.stopReason || '';
   if (reason === 'user_interrupt' || reason === 'context_limit') {
     return {};
+  }
+
+  // Stale 마커 자동 정리 — Ralph 가 이미 죽었는데 마커만 남아
+  // 다른 Claude Code 세션(개발, 문서 작업 등)까지 차단당하는 것을 막는다.
+  // 조건: (1) Ralph session-meta 가 살아있지 않음, AND (2) 마커 자체가
+  // STALE_MARKER_MINUTES 분 이상 오래됨. 둘 다 만족해야 stale 로 판정.
+  for (const p of [ACTIVE_TASK_PATH, LEGACY_ACTIVE_TASK_PATH]) {
+    if (existsSync(p) && !isSessionAlive() && isMarkerStale(p)) {
+      cleanupStaleMarker(p);
+    }
   }
 
   // 활성 태스크 파일 로드 (신규 스코프 파일 우선, 레거시 파일 폴백)
