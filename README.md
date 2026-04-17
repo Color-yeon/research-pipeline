@@ -296,6 +296,232 @@ After completion you'll find:
 
 ---
 
+## 🇺🇸 Detailed usage (by scenario)
+
+Scenario-oriented cookbook for what you'll actually run day-to-day. Assumes you already did the Quick start once.
+
+### A. Start a brand-new topic
+
+```bash
+tmux new -s research        # recommended — long runs + free detach/attach
+
+./start-research.sh deep --name <my-topic-slug>
+#   └ Anything currently at the root is auto-moved to archive/<slug>-<timestamp>/
+#   └ Omit --name and a slug will be derived from the first keyword in intake
+
+# Detach: Ctrl+B, D    /    Reattach: tmux a -t research
+```
+
+The intake prompt is a 1:1 conversation with the agent to pin down the topic, keywords, and sub-questions. When you're done, the agent writes `research-config.json` directly — exit with `/exit` or `Ctrl+C`. Everything after that (prd.json generation → sentinel → Ralph TUI) is automatic.
+
+### B. Resume after an interruption
+
+Three common causes: ① rate-limit ② process crash ③ user `Ctrl+C`. All three resume the same way:
+
+```bash
+# With research-config.json + prd.json already present at the root:
+./start-research.sh resume     # sentinel calls ralph-tui resume on the last session
+
+# If the sentinel loop itself exited but tasks remain:
+./start-research.sh run        # skip intake/task-gen, run prd.json straight
+```
+
+- `resume` calls `ralph-tui resume`, inheriting the last session's task completion state.
+- `run` re-plans from scratch given the current `prd.json`; finished work is skipped by each skill based on whether the target `findings/` artifact already exists.
+- After a **laptop reboot** the same commands work — Ralph session metadata lives under `~/.bun/`.
+
+### C. Run a single skill for focused debugging
+
+When you want to locate exactly where the pipeline breaks, bypass Ralph and invoke one skill at a time from a plain Claude Code session.
+
+```bash
+# With a valid research-config.json at the root:
+claude /research-tasks deep        # generate prd.json only
+claude /research-search            # one search task + Tier 1/2 full-text collection
+claude /research-read              # Tier-3 retry (Playwright MCP) for failures
+claude /research-credibility       # predatory/retracted filter
+claude /research-analyze           # integrated analysis + coverage audit
+claude /research-validate          # triple-parallel validation
+claude /research-notion            # upload to Notion
+
+# Sanity-check one DOI through the fetcher (API keys + proxy path)
+node scripts/fetch-paper.js --tier1-only 10.1021/acs.jcim.0c00731
+node scripts/fetch-paper.js --status           # cumulative collection status
+node scripts/fetch-paper.js --refetch          # retry previously-failed entries
+```
+
+### D. Watching progress and logs
+
+```bash
+tail -f logs/ralph_run.log            # live agent output
+tail -f logs/sentinel.log             # restart / rate-limit watcher
+
+ls findings/                          # evidence cards, analyses, audits
+cat findings/_checkpoint.json         # PreCompact hook's progress snapshot
+cat findings/_fetch_results.json      # cumulative full-text fetch log
+cat findings/_search_wisdom.json      # WebSearch query-usage pattern
+cat findings/_active_task_research.json   # current active task (Stop hook)
+```
+
+### E. Topic switching and archive restore
+
+```bash
+./start-research.sh library                       # list archived topics
+./start-research.sh restore <slug>                # restore a past topic to the root (current work auto-preserved)
+./start-research.sh deep --name <new-slug>        # archive current as <new-slug>, then start fresh
+```
+
+### F. Switching agents
+
+```bash
+./start-research.sh deep --agent claude           # default
+./start-research.sh deep --agent codex
+./start-research.sh deep --agent gemini
+AGENT=codex ./start-research.sh run               # override .env AGENT for this run only
+```
+
+> ⚠️ You cannot switch agents mid-session via `resume` — Ralph pins the agent at session start. Start a new `deep`/`trend` run instead.
+
+### G. Common failure modes
+
+| Symptom | Cause & fix |
+|---------|-------------|
+| `❌ Ralph TUI not found` | Install `ralph-tui` via `bun`, or `RALPH_BIN=/abs/path ./start-research.sh …` |
+| `❌ Required CLI missing: 'claude'` (or codex/gemini) | Chosen agent CLI is absent. Swap with `--agent` or install it |
+| Playwright login window keeps popping up | Delete `./.playwright-auth.json` and/or `./.playwright-profile/`, rerun `bash scripts/setup-auth.sh` |
+| EZproxy login always fails | Verify `PROXY_BASE_URL` shape (varies by institution). Set `PROXY_ENABLED=false` to fall back to open-access-only |
+| `fetch-paper.js` returns only `HTTP 404` | The paper isn't OA or the DOI route changed. Retry via Tier 3 (`/research-read`) to go through the proxy |
+| Ralph keeps rerunning the same task | Stop hook detected coverage gaps and forced a redo. Check `[verify-fix]` lines in the log. Auto-passes after 3 blocks |
+| Session hit a rate limit | Sentinel auto-waits until reset; remaining time is printed to `logs/sentinel.log`. `Ctrl+C` to cancel |
+| Intake finishes without a `research-config.json` | Tell the agent explicitly: "please write research-config.json now." `start-research.sh` aborts if it's missing |
+
+### H. Nuclear reset
+
+```bash
+./start-research.sh deep --name trash-$(date +%s)   # archive current state, start over
+# Or (destructive) remove root artifacts directly:
+rm -rf findings/ logs/
+rm -f research-config.json prd.json
+```
+
+> Prefer the `--name` archive path — `rm` is non-recoverable.
+
+---
+
+## 🇰🇷 상세 사용법 (시나리오별)
+
+실전에서 자주 마주치는 상황별 명령어 모음입니다. 위 "빠른 시작"을 이미 한 번 돌려봤다는 전제로 씁니다.
+
+### A. 처음부터 새 주제로 시작하기
+
+```bash
+# tmux 안에서 돌리는 것을 권장 (장시간 실행 + detach/attach 자유)
+tmux new -s research
+
+./start-research.sh deep --name <my-topic-slug>
+#   └ 기존 루트 작업물은 archive/<my-topic-slug>-<timestamp>/ 로 자동 보존
+#   └ --name 을 생략하면 인테이크 중에 잡힌 첫 키워드로 자동 슬러그 생성
+
+# detach: Ctrl+B, D    /    다시 붙기: tmux a -t research
+```
+
+인테이크 대화창은 에이전트와 1:1로 주제를 확정하는 단계입니다. 주제·키워드·하위 질문을 합의하면 에이전트가 `research-config.json`을 직접 씁니다. 다 되면 `/exit` 또는 `Ctrl+C`로 빠져나오세요. 이후는 자동으로 `prd.json` 생성 → `sentinel.sh` → Ralph TUI 무인 실행으로 이어집니다.
+
+### B. 중단되었을 때 이어서 실행
+
+세션이 죽는 경로는 크게 3가지입니다 — ① rate-limit ② 프로세스 크래시 ③ 사용자 `Ctrl+C`. 셋 다 **같은 명령으로 재개**합니다.
+
+```bash
+# 루트에 research-config.json + prd.json 이 남아있는 상태에서
+./start-research.sh resume     # sentinel이 마지막 Ralph 세션을 resume
+
+# sentinel 자체는 정상 종료됐지만 아직 남은 태스크가 있을 때
+./start-research.sh run        # 인테이크/태스크 생성은 건너뛰고 바로 실행
+```
+
+- `resume`은 `ralph-tui resume`을 호출해 **마지막 세션의 진행 상태(완료/미완료 태스크 표시)**를 이어받습니다.
+- `run`은 세션 정보가 없어도 `prd.json` 기준으로 처음부터 다시 스케줄링합니다. Ralph가 이미 끝낸 태스크는 `findings/` 산출물 존재 여부로 스킬 쪽에서 스스로 판단해 중복 작업을 피합니다.
+- **노트북을 리부팅한 뒤**에도 프로젝트 루트로 들어와 `resume` 또는 `run`을 그대로 치면 됩니다. Ralph 세션 메타데이터는 `~/.bun/` 쪽 ralph-tui 저장소에 남아있습니다.
+
+### C. 한 스킬만 수동으로 돌려 디버그
+
+Ralph 루프를 거치지 않고 **스킬 하나**만 Claude Code 세션에서 호출할 수 있습니다. 파이프라인이 어디서 깨지는지 빠르게 좁힐 때 유용합니다.
+
+```bash
+# 1) 최소 research-config.json 을 직접 쓰고 (또는 기존 것 재사용)
+# 2) 스킬을 순서대로 한 번씩:
+claude /research-tasks deep        # prd.json 생성만 확인
+claude /research-search            # 검색 + Tier 1/2 전문 수집 한 태스크만
+claude /research-read              # Tier 1/2 실패 논문을 Tier 3(Playwright)로 재시도
+claude /research-credibility       # 사기성 논문 필터
+claude /research-analyze           # 통합 분석 + 커버리지 감사
+claude /research-validate          # 3중 병렬 검증
+claude /research-notion            # 노션 업로드
+
+# DOI 하나만 전문 수집 테스트 (API 키·프록시 동작 점검)
+node scripts/fetch-paper.js --tier1-only 10.1021/acs.jcim.0c00731
+node scripts/fetch-paper.js --status           # 누적 수집 현황
+node scripts/fetch-paper.js --refetch          # 기존 실패건 재시도
+```
+
+### D. 진행 상황·로그 확인
+
+```bash
+tail -f logs/ralph_run.log            # Ralph(에이전트) 실행 로그
+tail -f logs/sentinel.log             # 재시작/rate-limit 감시 로그
+
+ls findings/                          # 증거카드, 분석, 감사 마크다운
+cat findings/_checkpoint.json         # PreCompact 훅이 저장한 진행 스냅샷
+cat findings/_fetch_results.json      # 전문 수집 결과 누적 로그
+cat findings/_search_wisdom.json      # WebSearch 쿼리 사용 패턴
+cat findings/_active_task_research.json   # 현재 활성 태스크 추적(Stop 훅 사용)
+```
+
+### E. 주제 전환 / 아카이브 복원
+
+```bash
+./start-research.sh library                       # 아카이브된 주제 목록
+./start-research.sh restore <slug>                # 예전 주제를 루트로 복원 (현재 작업은 자동 보존)
+./start-research.sh deep --name <new-slug>        # 현재 작업을 이 이름으로 보존한 뒤 새 주제 시작
+```
+
+### F. 에이전트 전환
+
+```bash
+./start-research.sh deep --agent claude           # 기본값
+./start-research.sh deep --agent codex
+./start-research.sh deep --agent gemini
+AGENT=codex ./start-research.sh run               # .env 의 AGENT를 이번 실행만 덮어쓰기
+```
+
+> ⚠️ 진행 중인 Ralph 세션을 `resume`하는 도중에는 에이전트를 바꿀 수 없습니다(세션이 시작될 때의 에이전트로 고정). 바꾸려면 새로 `deep`/`trend` 로 시작하세요.
+
+### G. 자주 막히는 지점 (체크리스트)
+
+| 증상 | 원인 & 대처 |
+|------|-------------|
+| `❌ Ralph TUI 를 찾지 못했습니다` | `bun` 으로 `ralph-tui` 설치 or `RALPH_BIN=/절대경로 ./start-research.sh …` |
+| `❌ 필수 CLI 누락: 'claude'` (또는 codex/gemini) | 선택한 에이전트 CLI 미설치. `--agent` 로 다른 에이전트로 바꾸거나 설치 |
+| Playwright 인증 창이 계속 뜸 | `./.playwright-auth.json` 또는 `./.playwright-profile/` 을 지우고 `bash scripts/setup-auth.sh` 재실행 |
+| EZproxy 로그인만 계속 실패 | `.env` 의 `PROXY_BASE_URL` 형식 확인 (기관마다 다름). 일단 `PROXY_ENABLED=false` 로 두고 오픈액세스만 돌려보기 |
+| `fetch-paper.js` 가 전부 `HTTP 404` | 해당 논문이 오픈액세스가 아니거나 DOI 경로 변경. Tier 3(`/research-read`)로 재시도하면 프록시 경유 |
+| Ralph가 같은 태스크만 반복 | `Stop` 훅이 커버리지 부족을 감지해 재검색 유도 중. 로그의 "[verify-fix]" 메시지 확인. 3회 초과 시 자동 통과 |
+| 세션이 rate-limit에 걸림 | sentinel이 리셋 시간까지 자동 대기. `logs/sentinel.log` 에 남은 대기 시간 출력. 취소는 Ctrl+C |
+| 인테이크 대화 중 `research-config.json` 이 안 써짐 | 에이전트에게 "research-config.json 을 지금 써줘" 라고 명시 요청. 파일이 없으면 start-research.sh 는 중단됨 |
+
+### H. 완전히 처음부터 다시
+
+```bash
+./start-research.sh deep --name trash-$(date +%s)   # 지금 상태를 아카이브로 던지고 새로 시작
+# 또는 (위험) 루트 아티팩트 직접 제거:
+rm -rf findings/ logs/
+rm -f research-config.json prd.json
+```
+
+> `rm` 을 직접 쓰는 방식은 복원이 안 되므로, 가급적 `--name` 아카이브 방식을 쓰세요.
+
+---
+
 ## 🇰🇷 에이전트 선택 (Claude / Codex / Gemini)
 
 이 파이프라인은 Anthropic의 **Agent Skills 공개 표준**을 채택해 세 가지 에이전트
