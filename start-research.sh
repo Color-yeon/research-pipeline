@@ -13,7 +13,8 @@
 #   restore <slug>  — 아카이브된 프로젝트를 루트로 복원 (현재 상태는 자동 보존)
 #
 # --agent 옵션을 주면 .env 의 AGENT 값을 이 실행에서만 덮어쓴다.
-# 옵션이 없으면 .env 의 AGENT (기본 claude)를 사용한다.
+# --agent 와 AGENT 환경변수, .env 의 AGENT 가 모두 없으면
+# 실행 초반에 어떤 에이전트를 쓸지 대화형으로 물어본다(기본 선택: codex).
 # --name 옵션은 deep/trend 에서 기존 프로젝트를 자동 아카이브할 때
 # 자동 생성될 slug 를 원하는 이름으로 덮어쓴다.
 #
@@ -53,7 +54,8 @@ show_usage() {
   restore <slug>  — 아카이브된 프로젝트를 루트로 복원 (현재 상태는 자동 보존)
 
 옵션:
-  --agent <name>   claude | codex | gemini (.env의 AGENT를 1회용 덮어쓰기)
+  --agent <name>   claude | codex | gemini — 지정하면 이번 실행에 한해 고정.
+                   미지정이면 AGENT 환경변수 → .env AGENT → 대화형 선택 순으로 결정.
   --name <slug>    deep/trend 에서 새 주제를 시작할 때, 기존 프로젝트를
                    자동 아카이브할 슬러그를 지정 (없으면 첫 키워드에서 자동 생성)
 
@@ -142,8 +144,14 @@ if [ "$MODE" = "restore" ]; then
     exit $?
 fi
 
-# ── 에이전트 설정 (--agent > .env AGENT > 기본 claude) ──────────────
+# ── 에이전트 설정 (--agent > env AGENT > .env AGENT > 대화형 선택) ─
 # run-agent.sh 와 Ralph TUI 가 같은 AGENT 값을 보도록 export 한다.
+# 우선순위:
+#   1) --agent 플래그  (명시적 의지가 제일 강함)
+#   2) 현재 쉘의 AGENT 환경변수
+#   3) .env 에 저장된 AGENT= 값
+#   4) 위 셋 다 없으면: stdin 이 TTY 이면 사용자에게 물어보고,
+#      비대화형(파이프/CI)이면 claude 로 폴백한다.
 if [ -n "$AGENT_OVERRIDE" ]; then
     case "$AGENT_OVERRIDE" in
         claude|codex|gemini)
@@ -155,10 +163,65 @@ if [ -n "$AGENT_OVERRIDE" ]; then
             ;;
     esac
 fi
-# .env 의 AGENT 는 run-agent.sh / sentinel.sh 가 로드할 때 반영됨.
-# AGENT_OVERRIDE 가 없고 환경변수 AGENT 도 없다면 여기서 기본값을 표기만 해둔다.
-AGENT_DISPLAY="${AGENT:-$(grep -E '^AGENT=' "$PROJECT_DIR/.env" 2>/dev/null | head -n 1 | cut -d'=' -f2- || echo claude)}"
-AGENT_DISPLAY="${AGENT_DISPLAY:-claude}"
+
+# 현재 쉘의 AGENT 가 없으면 .env 의 값을 먼저 읽어 본다.
+AGENT_FROM_ENV_FILE=""
+if [ -z "${AGENT:-}" ] && [ -f "$PROJECT_DIR/.env" ]; then
+    AGENT_FROM_ENV_FILE="$(grep -E '^AGENT=' "$PROJECT_DIR/.env" 2>/dev/null | head -n 1 | cut -d'=' -f2-)"
+    AGENT_FROM_ENV_FILE="${AGENT_FROM_ENV_FILE//\"/}"
+    AGENT_FROM_ENV_FILE="${AGENT_FROM_ENV_FILE//\'/}"
+fi
+
+if [ -z "${AGENT:-}" ] && [ -n "$AGENT_FROM_ENV_FILE" ]; then
+    case "$AGENT_FROM_ENV_FILE" in
+        claude|codex|gemini)
+            export AGENT="$AGENT_FROM_ENV_FILE"
+            ;;
+        *)
+            echo "⚠ .env 의 AGENT='$AGENT_FROM_ENV_FILE' 은 지원되지 않는 값입니다. 무시합니다." >&2
+            ;;
+    esac
+fi
+
+# 여전히 AGENT 가 비어 있으면 대화형으로 고른다.
+# - TTY 가 있으면 사용자에게 묻는다 (기본 선택지는 Codex).
+# - 비대화형이면 claude 로 폴백한다 (CI/파이프 호환).
+if [ -z "${AGENT:-}" ]; then
+    if [ -t 0 ] && [ -t 1 ]; then
+        echo ""
+        echo "────────────────────────────────────────"
+        echo " 연구 에이전트 선택"
+        echo "────────────────────────────────────────"
+        echo "  1) codex   — OpenAI Codex CLI   (GPT 계열)"
+        echo "  2) claude  — Claude Code"
+        echo "  3) gemini  — Google Gemini CLI"
+        echo ""
+        echo "기본값을 고정하려면 .env 에 AGENT=codex 처럼 적어 두거나,"
+        echo "실행 시 --agent <이름> 플래그를 사용하세요."
+        echo ""
+        AGENT_CHOICE=""
+        while [ -z "$AGENT_CHOICE" ]; do
+            read -r -p "어떤 에이전트로 진행할까요? [1-3, 기본=1] " AGENT_INPUT </dev/tty || AGENT_INPUT=""
+            AGENT_INPUT="${AGENT_INPUT,,}"
+            case "${AGENT_INPUT:-1}" in
+                1|codex)   AGENT_CHOICE="codex" ;;
+                2|claude)  AGENT_CHOICE="claude" ;;
+                3|gemini)  AGENT_CHOICE="gemini" ;;
+                *)
+                    echo "   '$AGENT_INPUT' 은 지원되지 않습니다. 1/2/3 또는 claude/codex/gemini 중 하나를 입력하세요." >&2
+                    ;;
+            esac
+        done
+        export AGENT="$AGENT_CHOICE"
+        echo "✓ 선택: $AGENT"
+    else
+        # 비대화형 실행(CI 등): 명시 설정이 없으면 claude 로 폴백.
+        export AGENT="claude"
+        echo "ℹ 비대화형 실행이라 AGENT 를 'claude' 로 폴백합니다. (원하는 값을 --agent 또는 AGENT 환경변수로 지정하세요)" >&2
+    fi
+fi
+
+AGENT_DISPLAY="$AGENT"
 
 # ── 선행 CLI 존재 검증 ─────────────────────────────────────────────
 # 파이프라인이 의존하는 외부 CLI가 모두 설치되어 있는지 미리 확인한다.
